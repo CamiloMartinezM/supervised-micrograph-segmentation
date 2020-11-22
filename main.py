@@ -13,10 +13,15 @@ from model import SegmentationModel
 
 from copy import deepcopy
 
+# Source directory
+# src = "C:\\Users\\Camilo Martínez\\Google Drive"
+src = ""
+
+# Train/dev/test split
 TRAIN_SIZE = 0.7
 DEV_SIZE = 0.2
 
-model = SegmentationModel()
+model = SegmentationModel(src=src)
 
 # %%
 

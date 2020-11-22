@@ -131,4 +131,6 @@ dmypy.json
 generated_data/
 generated_images/
 unused/
+Anotadas/
+Preprocesadas/
 .vscode
