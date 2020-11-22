@@ -7,13 +7,12 @@ Created on Wed Nov 11 17:11:12 2020
 import os
 from pprint import pprint
 import pandas as pd
-import cv2
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
 from openpyxl import load_workbook
 from prettytable import PrettyTable
-from skimage import io
+from skimage import io, color
 import random
 
 
@@ -65,10 +64,14 @@ def rgb2gray(rgb: np.ndarray) -> np.ndarray:
     Returns:
         np.ndarray: Image in grayscale as a numpy array.
     """
-    if len(rgb.shape) < 3:
+    if len(rgb.shape) != 3:
         return rgb
     else:  # len(rgb.shape) == 3
-        return cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        if rgb.shape[-1] == 4:
+            return color.rgb2gray(color.rgba2rgb(rgb))
+        else:
+            return color.rgb2gray(rgb)
+
 
 
 def load_img(path: str, as_255: bool = True, with_io: bool = False) -> np.ndarray:

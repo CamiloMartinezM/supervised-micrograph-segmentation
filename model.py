@@ -28,24 +28,17 @@ from utils_functions import (
     matrix_to_excel,
 )
 
-
 class SegmentationModel:
     def __init__(
         self,
-        LABELED: str = "Anotadas",
-        TO_LABEL: str = "Micrografías a anotar",
-        PREPROCESSED: str = "Preprocesadas",
-        SRC: str = "C:\\Users\\Camilo Martínez\\Google Drive",
+        src: str,
+        labeled: str = "Anotadas",
+        preprocessed: str = "Preprocesadas"
     ):
         """
         Args:
             LABELED (str, optional): Name of folder with labeled images. Defaults to "Anotadas".
-            TO_LABEL (str, optional): Name of folder with soon to be labeled images. Defaults to 
-                                      "Micrografías a anotar".
-            PREPROCESSED (str, optional): Name of folder with preprocessed images. Defaults to 
-                                          "Preprocesadas".
-            SRC (str, optional): Path to folder which contains all previous ones. Defaults to 
-                                 "C:\\Users\\Camilo Martínez\\Google Drive".
+            SRC (str): Path to source.
         """
         # The following constants represent directories of interest.
         # The folder where the annotated micrographs are and the one where all the
@@ -54,14 +47,12 @@ class SegmentationModel:
         # which generally appears in the lower section of the image, and the second one
         # is precisely the latter (which naturally has the information regarding the
         # scale).
-        self.PATH_LABELED = f"{SRC}\\{LABELED}"
-        self.PATH_TO_LABEL = f"{SRC}\\{TO_LABEL}"
-        self.PATH_PREPROCESSED = f"{SRC}\\{PREPROCESSED}"
-
+        self.PATH_LABELED = os.path.join(src, labeled)
+        self.PATH_PREPROCESSED = os.path.join(src, preprocessed)
+        
         print(f"\nPath to labeled micrographs: {self.PATH_LABELED}")
-        print(f"Path to micrographs soon to be labeled: {self.PATH_TO_LABEL}")
-        print(f"Path to preprocessed micrographs: {self.PATH_PREPROCESSED}\n")
-
+        print(f"Path to preprocessed micrographs: {self.PATH_PREPROCESSED}")
+        
         self.micrographs, self.index_to_name = self.load_imgs()
         self.micrographs_scales = self.load_scales()
         (
