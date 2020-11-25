@@ -310,7 +310,7 @@ class FilterBankMR8:
         result = np.zeros((8, *img.shape))
         for i, battery in enumerate(filterbank):
             if use_fftconvolve:
-                response = [fftconvolve(img, filt) for filt in battery]
+                response = [fftconvolve(img, filt, mode="same") for filt in battery]
             else:
                 response = Parallel(n_jobs=-1)(
                     delayed(convolve)(img, filt) for filt in battery

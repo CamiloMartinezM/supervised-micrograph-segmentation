@@ -6,6 +6,7 @@ Created on Wed Nov 11 17:11:12 2020
 """
 import os
 import cudf
+import random
 
 from pprint import pprint
 
