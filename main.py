@@ -22,7 +22,7 @@ src = ""
 TRAIN_SIZE = 0.7
 DEV_SIZE = 0.2
 
-model = SegmentationModel(src=src)
+model = SegmentationModel(src=src, as_255=False)
 
 # %%
 
@@ -68,6 +68,11 @@ model.train(
     precomputed_feature_vectors=None,
     multiscale_statistics_scales=0,
     verbose=False,
+)
+
+# %%
+precomputed_feature_vectors_of_label = deepcopy(
+    model.feature_vectors_of_label
 )
 
 # %%

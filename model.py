@@ -12,11 +12,10 @@ from random import randint, shuffle
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-from cuml.cluster import KMeans
+from cuml import KMeans
 from numba import jit
 from skimage.segmentation import mark_boundaries
 from sklearn import metrics
-from sklearn.cluster import KMeans, MiniBatchKMeans
 
 from utils_classes import (FilterBankMR8, MultiscaleStatistics, Scaler,
                            SLICSegmentation)
@@ -28,7 +27,7 @@ from utils_functions import (find_path_of_img, load_img, matrix_to_excel,
 
 class SegmentationModel:
     def __init__(
-        self, src: str, as_255: bool, labeled: str = "Anotadas", preprocessed: str = "Preprocesadas"
+        self, src: str, as_255: bool = True, labeled: str = "Anotadas", preprocessed: str = "Preprocesadas"
     ):
         """
         Args:
@@ -436,10 +435,8 @@ class SegmentationModel:
         self.silhouette_coefficients = {}
         for label in self.feature_vectors_of_label:
             print(f"[?] Computing K-means on feature vector of label: {label}... ")
-
-            self.textons[label] = KMeans(n_clusters=K).fit(
-                np2cudf(self.feature_vectors_of_label[label])
-            )
+            X = np2cudf(np.array(self.feature_vectors_of_label[label]))
+            self.textons[label] = KMeans(n_clusters=K).fit(X)
 
             print(
                 "\tExample: ",
