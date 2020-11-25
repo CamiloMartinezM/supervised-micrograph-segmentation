@@ -15,8 +15,8 @@ from copy import deepcopy
 from model import SegmentationModel
 
 # Source directory
-# src = ""
-src = "C:\\Users\\Camilo Martínez\\Google Drive"
+src = ""
+# src = "C:\\Users\\Camilo Martínez\\Google Drive"
 
 # Train/dev/test split
 TRAIN_SIZE = 0.7
@@ -67,8 +67,6 @@ model.train(
     dev_size=DEV_SIZE,
     precomputed_feature_vectors=None,
     multiscale_statistics_scales=0,
-    use_minibatch=False,
-    minibatch_size=1000,
     verbose=False,
 )
 

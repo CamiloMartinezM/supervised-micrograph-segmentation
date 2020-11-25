@@ -6,13 +6,14 @@ Created on Thu Nov 12 06:45:29 2020
 """
 import os
 from itertools import chain, product
+# from numba import jit
 
 import matplotlib.cm
 import matplotlib.pyplot as plt
 import numpy as np
 from numba import jit
 
-# from joblib import Parallel, delayed
+from joblib import Parallel, delayed
 from scipy.ndimage import convolve
 from scipy.signal import fftconvolve
 from skimage.segmentation import mark_boundaries, slic
@@ -207,8 +208,8 @@ class FilterBankMR8:
         self.sigmas = sigmas
         self.n_orientations = n_orientations
 
-    def response(self, img: np.ndarray) -> np.ndarray:
-        return FilterBankMR8.apply_filterbank(img, self.filterbank)
+    def response(self, img: np.ndarray, use_fftconvolve: bool = True) -> np.ndarray:
+        return FilterBankMR8.apply_filterbank(img, self.filterbank, use_fftconvolve)
 
     @staticmethod
     def makeRFSfilters(
@@ -304,14 +305,16 @@ class FilterBankMR8:
         fig.savefig("filters.png", dpi=300)
 
     @staticmethod
-    @jit
-    def apply_filterbank(img: np.ndarray, filterbank: tuple) -> np.ndarray:
+    # @jit
+    def apply_filterbank(img: np.ndarray, filterbank: tuple, use_fftconvolve: bool) -> np.ndarray:
         result = np.zeros((8, *img.shape))
         for i, battery in enumerate(filterbank):
-            response = [fftconvolve(img, filt, mode="same") for filt in battery]
-            # response = Parallel(n_jobs=-1)(
-            #     delayed(scipy.ndimage.convolve)(img, filt) for filt in battery
-            # )
+            if use_fftconvolve:
+                response = [fftconvolve(img, filt) for filt in battery]
+            else:
+                response = Parallel(n_jobs=-1)(
+                    delayed(convolve)(img, filt) for filt in battery
+                )
             max_response = np.max(response, axis=0)
             result[i] = max_response
 
