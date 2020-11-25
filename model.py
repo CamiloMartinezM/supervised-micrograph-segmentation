@@ -6,28 +6,24 @@ Created on Wed Nov 11 16:59:47 2020
 """
 import os
 from collections import Counter
-from random import randint, shuffle
-from numba import jit
 from copy import deepcopy
+from random import randint, shuffle
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-from skimage.segmentation import mark_boundaries
 from cuml.cluster import KMeans
+from numba import jit
+from skimage.segmentation import mark_boundaries
 from sklearn import metrics
+from sklearn.cluster import KMeans, MiniBatchKMeans
 
-from utils_classes import FilterBankMR8, MultiscaleStatistics, Scaler, SLICSegmentation
-from utils_functions import (
-    load_img,
-    find_path_of_img,
-    print_table_from_dict,
-    train_dev_test_split,
-    train_dev_test_split_table,
-    plot_confusion_matrix,
-    matrix_to_excel,
-    np2cudf
-)
+from utils_classes import (FilterBankMR8, MultiscaleStatistics, Scaler,
+                           SLICSegmentation)
+from utils_functions import (find_path_of_img, load_img, matrix_to_excel,
+                             np2cudf, plot_confusion_matrix,
+                             print_table_from_dict, train_dev_test_split,
+                             train_dev_test_split_table)
 
 
 class SegmentationModel:
@@ -64,11 +60,11 @@ class SegmentationModel:
         self.feature_vectors_of_label = None
 
     def load_scales(self) -> dict:
-        """Loads the scale of the images by going to PREPROCESSED and finding the corresponding 
+        """Loads the scale of the images by going to PREPROCESSED and finding the corresponding
         SCALE image of every image in LABELED.
 
         Returns:
-            dict: Dictionary whose keys are names of images and values are their respective scale 
+            dict: Dictionary whose keys are names of images and values are their respective scale
                   pixel length.
         """
         print("\n[*] SCALES EXTRACTION:\n")
@@ -88,7 +84,7 @@ class SegmentationModel:
         """Loads images in LABELED in a numpy array.
 
         Returns:
-            tuple: Numpy array with all images, dictionary whose keys are names of images and values 
+            tuple: Numpy array with all images, dictionary whose keys are names of images and values
                    are the corresponding indeces in the numpy array of images.
         """
         print("\n[*] IMAGES LOADING:\n")
@@ -121,14 +117,14 @@ class SegmentationModel:
         return self.micrographs[self.index_to_name[name]]
 
     def extract_labeled_windows(self) -> tuple:
-        """Within LABELED, each of the images has a .txt file associated with it that contains the 
-        information of the position of each of its regions or windows that were annotated. This 
-        section is then in charge of extracting said regions by slicing the numpy array of an image 
+        """Within LABELED, each of the images has a .txt file associated with it that contains the
+        information of the position of each of its regions or windows that were annotated. This
+        section is then in charge of extracting said regions by slicing the numpy array of an image
         accordingly to get each of its labeled windows.
 
         Returns:
-            tuple: dictionary of label counts; dictionary of windows whose keys are the labels and 
-                   values are a list of numpy arrays, which are the windows associated with the 
+            tuple: dictionary of label counts; dictionary of windows whose keys are the labels and
+                   values are a list of numpy arrays, which are the windows associated with the
                    label; and dictionary of windows and respective labels per loaded image.
         """
 
@@ -221,7 +217,9 @@ class SegmentationModel:
                         print("Done")
 
         print_table_from_dict(
-            labels, cols=["Label", "Number"], title="Number of windows per label",
+            labels,
+            cols=["Label", "Number"],
+            title="Number of windows per label",
         )
 
         return labels, windows_per_label, windows_per_name
@@ -258,16 +256,16 @@ class SegmentationModel:
 
     @staticmethod
     def concatenate_responses(responses: np.ndarray) -> np.ndarray:
-        """Helper function to obtain the complete feature vector of a label by concatenating all 
-        responses of images with the same label, so that a single matrix is obtained in which a row 
-        corresponds to a single pixel and each pixel possesses 8 dimensions, because of the MR8 
+        """Helper function to obtain the complete feature vector of a label by concatenating all
+        responses of images with the same label, so that a single matrix is obtained in which a row
+        corresponds to a single pixel and each pixel possesses 8 dimensions, because of the MR8
         Filter Bank.
 
         Args:
             responses (np.ndarray): Numpy array of responses.
 
         Returns:
-            np.ndarray: Numpy array of all responses, where a row corresponds to a single pixel 
+            np.ndarray: Numpy array of all responses, where a row corresponds to a single pixel
                         feature vector.
         """
         return np.concatenate(
@@ -310,22 +308,22 @@ class SegmentationModel:
     def get_feature_vectors_of_labels(
         self, windows: dict, multiscale_statistics_scales: int, verbose: bool = True
     ) -> dict:
-        """Each pixel of each annotated window has 8 responses associated with the filters used. 
-        These responses must be unified in some way, since they are part of the same class. 
-        Therefore, the following implementation transforms each of the responses obtained per window 
-        into a matrix where each row is a pixel of an annotation. And, since each of the annotations 
-        has 8 associated responses, each pixel is represented by an 8-dimensional vector. This means 
-        that each row will have 8 columns, corresponding to the value obtained from the filter. On 
+        """Each pixel of each annotated window has 8 responses associated with the filters used.
+        These responses must be unified in some way, since they are part of the same class.
+        Therefore, the following implementation transforms each of the responses obtained per window
+        into a matrix where each row is a pixel of an annotation. And, since each of the annotations
+        has 8 associated responses, each pixel is represented by an 8-dimensional vector. This means
+        that each row will have 8 columns, corresponding to the value obtained from the filter. On
         the other hand, since there are several classes, said matrix will be stored in a dictionary,
         whose keys will be the classes found.
 
         Args:
             windows (dict): Dictionary of windows per label.
-            multiscale_statistics_scales (int): Number of scales to consider when computing 
+            multiscale_statistics_scales (int): Number of scales to consider when computing
                                                 multiscales statistics.
 
         Returns:
-            dict: Dictionary of feature vectors per label. Keys corresponds to labels and values are 
+            dict: Dictionary of feature vectors per label. Keys corresponds to labels and values are
                   the feature vectors of that label.
         """
         self.multiscale_statistics = MultiscaleStatistics(multiscale_statistics_scales)
@@ -388,8 +386,8 @@ class SegmentationModel:
         compute_silhouette_scores: bool = False,
         verbose: bool = True,
     ) -> None:
-        """Trains the model by setting K equal to the number of clusters to be learned in K-means, 
-        i.e, the number of textons; and the number of scales to consider when computing multiscale 
+        """Trains the model by setting K equal to the number of clusters to be learned in K-means,
+        i.e, the number of textons; and the number of scales to consider when computing multiscale
         statistics to 3.
 
         Args:
@@ -476,7 +474,7 @@ class SegmentationModel:
     @staticmethod
     @jit
     def get_closest_texton_vector(feature_vectors: np.ndarray, T) -> np.ndarray:
-        """Obtains a vector whose values are the minimum distances of each pixel of a 
+        """Obtains a vector whose values are the minimum distances of each pixel of a
         superpixel. For example, if a superpixel has 300 pixels, this function returns a (300,)
         vector, where each value is the minimum distance of an enumerated pixel.
 
@@ -495,15 +493,15 @@ class SegmentationModel:
     @staticmethod
     @jit
     def get_distance_matrix(feature_vectors: np.ndarray, T) -> np.ndarray:
-        """Obtains a matrix which has the information of all possible distances from a pixel of 
+        """Obtains a matrix which has the information of all possible distances from a pixel of
         a superpixel to every texton of every class.
 
         Args:
             feature_vectors (np.ndarray): Feature vectors of the superpixel.
-            
+
         Returns:
             np.ndarray: Matrix of shape (10, NUM_PIXELS, K). Every (i, j, k) matrix value
-                        corresponds to the distance from the i-th pixel to the k-th texton of 
+                        corresponds to the distance from the i-th pixel to the k-th texton of
                         the j-th class.
         """
         return np.linalg.norm(
@@ -511,7 +509,7 @@ class SegmentationModel:
         )
 
     def predict_class_of(self, feature_vectors: np.ndarray) -> str:
-        """Predicts the class/label given the feature vectors that describe an image or a 
+        """Predicts the class/label given the feature vectors that describe an image or a
         window of an image (like a superpixel).
 
         Args:
@@ -528,7 +526,8 @@ class SegmentationModel:
 
         # Matrix which correlates texture texton distances and minimum distances of every pixel.
         A = np.sum(
-            np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09), axis=-1,
+            np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09),
+            axis=-1,
         )
         A_i = A.sum(axis=1)  # Sum over rows (i.e, over all pixels).
         ci = A_i.argmax(
@@ -556,7 +555,7 @@ class SegmentationModel:
             compactness (int, optional): SLIC algorithm parameter. Defaults to 0.1.
             plot_original (bool, optional): True if a plot of the original micrograph is desired.
                                             Defaults to True.
-            plot_superpixels (bool, optional): True if a plot of the superpixel generation is 
+            plot_superpixels (bool, optional): True if a plot of the superpixel generation is
                                                desired. Defaults to False.
             verbose (bool, optional): True if additional prints regarding the assignment of a class
                                       to a superpixel are desired. Defaults to False.
@@ -768,7 +767,9 @@ class SegmentationModel:
                 end="",
             )
             confusion_matrix = self.classification_confusion_matrix(
-                windows, small_test=small_test, max_test_number=max_test_number,
+                windows,
+                small_test=small_test,
+                max_test_number=max_test_number,
             )
             print("Done")
             plot_confusion_matrix(
@@ -800,7 +801,10 @@ class SegmentationModel:
             helper(self.windows_test, "Testing", f"Test, {constant_title}", "Test")
 
     def segmentation_confusion_matrix(
-        self, src: str = "", small_test: bool = False, max_test_number: int = 3,
+        self,
+        src: str = "",
+        small_test: bool = False,
+        max_test_number: int = 3,
     ) -> np.ndarray:
         if src == "":
             src = self.PATH_LABELED
