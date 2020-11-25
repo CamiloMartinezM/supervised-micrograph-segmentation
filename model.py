@@ -6,9 +6,7 @@ Created on Wed Nov 11 16:59:47 2020
 """
 import os
 from collections import Counter
-from copy import deepcopy
 from random import randint, shuffle
-
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,17 +15,26 @@ from numba import jit
 from skimage.segmentation import mark_boundaries
 from sklearn import metrics
 
-from utils_classes import (FilterBankMR8, MultiscaleStatistics, Scaler,
-                           SLICSegmentation)
-from utils_functions import (find_path_of_img, load_img, matrix_to_excel,
-                             np2cudf, plot_confusion_matrix,
-                             print_table_from_dict, train_dev_test_split,
-                             train_dev_test_split_table)
+from utils_classes import FilterBankMR8, MultiscaleStatistics, Scaler, SLICSegmentation
+from utils_functions import (
+    find_path_of_img,
+    load_img,
+    matrix_to_excel,
+    np2cudf,
+    plot_confusion_matrix,
+    print_table_from_dict,
+    train_dev_test_split,
+    train_dev_test_split_table,
+)
 
 
 class SegmentationModel:
     def __init__(
-        self, src: str, as_255: bool = True, labeled: str = "Anotadas", preprocessed: str = "Preprocesadas"
+        self,
+        src: str,
+        as_255: bool,
+        labeled: str = "Anotadas",
+        preprocessed: str = "Preprocesadas",
     ):
         """
         Args:
@@ -96,7 +103,9 @@ class SegmentationModel:
                 for f in os.listdir(os.path.join(self.PATH_LABELED, folder)):
                     if f.endswith(".png"):
                         print(f"\t Reading and loading {f}... ", end="")
-                        img = load_img(os.path.join(self.PATH_LABELED, folder, f), as_255)
+                        img = load_img(
+                            os.path.join(self.PATH_LABELED, folder, f), as_255
+                        )
                         m.append(img)
                         index_to_name[f] = count
                         count += 1
@@ -137,7 +146,7 @@ class SegmentationModel:
                 "austenita": "austenite",
                 "cementita": "cementite",
             }
-            
+
             if label in translation_dictionary.keys():
                 return translation_dictionary[label]
             elif label in translation_dictionary.values():
@@ -216,9 +225,7 @@ class SegmentationModel:
                         print("Done")
 
         print_table_from_dict(
-            labels,
-            cols=["Label", "Number"],
-            title="Number of windows per label",
+            labels, cols=["Label", "Number"], title="Number of windows per label",
         )
 
         return labels, windows_per_label, windows_per_name
@@ -523,8 +530,7 @@ class SegmentationModel:
 
         # Matrix which correlates texture texton distances and minimum distances of every pixel.
         A = np.sum(
-            np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09),
-            axis=-1,
+            np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09), axis=-1,
         )
         A_i = A.sum(axis=1)  # Sum over rows (i.e, over all pixels).
         ci = A_i.argmax(
@@ -764,9 +770,7 @@ class SegmentationModel:
                 end="",
             )
             confusion_matrix = self.classification_confusion_matrix(
-                windows,
-                small_test=small_test,
-                max_test_number=max_test_number,
+                windows, small_test=small_test, max_test_number=max_test_number,
             )
             print("Done")
             plot_confusion_matrix(
@@ -798,10 +802,7 @@ class SegmentationModel:
             helper(self.windows_test, "Testing", f"Test, {constant_title}", "Test")
 
     def segmentation_confusion_matrix(
-        self,
-        src: str = "",
-        small_test: bool = False,
-        max_test_number: int = 3,
+        self, src: str = "", small_test: bool = False, max_test_number: int = 3,
     ) -> np.ndarray:
         if src == "":
             src = self.PATH_LABELED
