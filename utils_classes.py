@@ -6,12 +6,12 @@ Created on Thu Nov 12 06:45:29 2020
 """
 import os
 from itertools import chain, product
+
 # from numba import jit
 
 import matplotlib.cm
 import matplotlib.pyplot as plt
 import numpy as np
-from numba import jit
 
 from joblib import Parallel, delayed
 from scipy.ndimage import convolve
@@ -140,10 +140,7 @@ class SLICSegmentation:
     """SLIC algorithm implementation with the library skimage."""
 
     def __init__(
-        self,
-        n_segments: int = 500,
-        sigma: int = 5,
-        compactness: int = 0.1,
+        self, n_segments: int = 500, sigma: int = 5, compactness: int = 0.1,
     ) -> None:
         """
         Args:
@@ -306,7 +303,9 @@ class FilterBankMR8:
 
     @staticmethod
     # @jit
-    def apply_filterbank(img: np.ndarray, filterbank: tuple, use_fftconvolve: bool) -> np.ndarray:
+    def apply_filterbank(
+        img: np.ndarray, filterbank: tuple, use_fftconvolve: bool
+    ) -> np.ndarray:
         result = np.zeros((8, *img.shape))
         for i, battery in enumerate(filterbank):
             if use_fftconvolve:

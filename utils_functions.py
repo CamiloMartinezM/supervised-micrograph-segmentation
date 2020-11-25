@@ -9,6 +9,7 @@ import cudf
 import random
 
 from pprint import pprint
+from random import shuffle
 
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
@@ -43,7 +44,7 @@ def train_dev_test_split(
 
     # Randomize values of dictionary.
     for label in data:
-        random.shuffle(data[label])
+        shuffle(data[label])
 
     # Split values in 3 dictionaries.
     for label in data:
@@ -159,25 +160,13 @@ def print_table_from_dict(data: dict, cols: list, title: str = "") -> None:
     characteristic_value = list(data.values())[0]
 
     if type(characteristic_value) is np.ndarray:
-        for label in sorted(
-            data.keys(),
-            key=lambda x: data[x].shape[0],
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: data[x].shape[0], reverse=True,):
             table.add_row([label, f"{data[label].shape}"])
     elif type(characteristic_value) is list:
-        for label in sorted(
-            data.keys(),
-            key=lambda x: len(data[x]),
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: len(data[x]), reverse=True,):
             table.add_row([label, f"{len(data[label])}"])
     else:  # int
-        for label in sorted(
-            data.keys(),
-            key=lambda x: data[x],
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: data[x], reverse=True,):
             table.add_row([label, f"{data[label]}"])
 
     print(table.get_string(title=title))
@@ -312,13 +301,15 @@ def matrix_to_excel(
         with pd.ExcelWriter(f"{filename}") as writer:
             df.to_excel(writer, sheet_name=sheetname, index=False)
 
+
 def np2cudf(df: np.ndarray) -> cudf.DataFrame:
     """Convert numpy array to cuDF dataframe."""
-    df = pd.DataFrame({'fea%d'%i:df[:,i] for i in range(df.shape[1])})
+    df = pd.DataFrame({"fea%d" % i: df[:, i] for i in range(df.shape[1])})
     pdf = cudf.DataFrame()
     for c, column in enumerate(df):
         pdf[str(c)] = df[column]
     return pdf
+
 
 def fullprint(*args, **kwargs) -> None:
     """Prints an array without truncation"""
