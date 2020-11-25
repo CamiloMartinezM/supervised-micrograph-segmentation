@@ -8,14 +8,14 @@ import os
 import cudf
 
 from pprint import pprint
-import pandas as pd
+
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from openpyxl import load_workbook
 from prettytable import PrettyTable
-from skimage import io, color
-import random
+from skimage import color, io
 
 
 def train_dev_test_split(
@@ -73,7 +73,6 @@ def rgb2gray(rgb: np.ndarray) -> np.ndarray:
             return color.rgb2gray(color.rgba2rgb(rgb))
         else:
             return color.rgb2gray(rgb)
-
 
 
 def load_img(path: str, as_255: bool = True, with_io: bool = False) -> np.ndarray:
@@ -159,13 +158,25 @@ def print_table_from_dict(data: dict, cols: list, title: str = "") -> None:
     characteristic_value = list(data.values())[0]
 
     if type(characteristic_value) is np.ndarray:
-        for label in sorted(data.keys(), key=lambda x: data[x].shape[0], reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: data[x].shape[0],
+            reverse=True,
+        ):
             table.add_row([label, f"{data[label].shape}"])
     elif type(characteristic_value) is list:
-        for label in sorted(data.keys(), key=lambda x: len(data[x]), reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: len(data[x]),
+            reverse=True,
+        ):
             table.add_row([label, f"{len(data[label])}"])
     else:  # int
-        for label in sorted(data.keys(), key=lambda x: data[x], reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: data[x],
+            reverse=True,
+        ):
             table.add_row([label, f"{data[label]}"])
 
     print(table.get_string(title=title))
@@ -213,7 +224,7 @@ def plot_confusion_matrix(
     showfig: bool = True,
     format_percentage: bool = False,
 ) -> None:
-    """Plots a visual representation of a confusion matrix. 
+    """Plots a visual representation of a confusion matrix.
     Original: https://stackoverflow.com/questions/35585069/python-tabulating-confusion-matrix
 
     Args:

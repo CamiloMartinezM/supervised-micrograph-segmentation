@@ -11,6 +11,7 @@ from itertools import chain, product
 import matplotlib.cm
 import matplotlib.pyplot as plt
 import numpy as np
+from numba import jit
 
 from joblib import Parallel, delayed
 from scipy.ndimage import convolve
@@ -139,7 +140,10 @@ class SLICSegmentation:
     """SLIC algorithm implementation with the library skimage."""
 
     def __init__(
-        self, n_segments: int = 500, sigma: int = 5, compactness: int = 0.1,
+        self,
+        n_segments: int = 500,
+        sigma: int = 5,
+        compactness: int = 0.1,
     ) -> None:
         """
         Args:
@@ -350,7 +354,7 @@ class MultiscaleStatistics:
         Args:
             img (np.ndarray): Image to calculate feature vectors.
             scales (int, optional): Number of scales to consider. Defaults to 3.
-            
+
         Returns:
             np.ndarray: Feature vectors of the input image of shape (*img.shape, 4*3*scales).
         """

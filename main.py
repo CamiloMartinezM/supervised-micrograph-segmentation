@@ -4,14 +4,15 @@ Created on Thu Nov 12 08:42:22 2020
 
 @author: Camilo Martínez
 """
-from numba.core.errors import NumbaWarning
 import warnings
+
+from numba.core.errors import NumbaWarning
 
 warnings.simplefilter("ignore", category=NumbaWarning)
 
-from model import SegmentationModel
-
 from copy import deepcopy
+
+from model import SegmentationModel
 
 # Source directory
 src = ""
