@@ -5,7 +5,8 @@ Created on Wed Nov 11 17:11:12 2020
 @author: Camilo Martínez
 """
 import os
-import random
+import cudf
+
 from pprint import pprint
 
 import matplotlib.image as mpimg
@@ -310,6 +311,13 @@ def matrix_to_excel(
         with pd.ExcelWriter(f"{filename}") as writer:
             df.to_excel(writer, sheet_name=sheetname, index=False)
 
+def np2cudf(df: np.ndarray) -> cudf.DataFrame:
+    """Convert numpy array to cuDF dataframe."""
+    df = pd.DataFrame({'fea%d'%i:df[:,i] for i in range(df.shape[1])})
+    pdf = cudf.DataFrame()
+    for c, column in enumerate(df):
+        pdf[str(c)] = df[column]
+    return pdf
 
 def fullprint(*args, **kwargs) -> None:
     """Prints an array without truncation"""
