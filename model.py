@@ -10,10 +10,11 @@ from random import randint, shuffle
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-from cuml import KMeans
+from cuml import KMeans as CumlKMeans
 from numba import jit
 from skimage.segmentation import mark_boundaries
 from sklearn import metrics
+from sklearn.cluster import MiniBatchKMeans
 
 from utils_classes import FilterBankMR8, MultiscaleStatistics, Scaler, SLICSegmentation
 from utils_functions import (
@@ -390,6 +391,8 @@ class SegmentationModel:
         train_size: float = 0.7,
         dev_size: float = 0.2,
         compute_silhouette_scores: bool = False,
+        use_minibatch: bool =True,
+        minibatch_size: int = 10000,
         verbose: bool = True,
     ) -> None:
         """Trains the model by setting K equal to the number of clusters to be learned in K-means,
@@ -442,8 +445,14 @@ class SegmentationModel:
         self.silhouette_coefficients = {}
         for label in self.feature_vectors_of_label:
             print(f"[?] Computing K-means on feature vector of label: {label}... ")
-            X = np2cudf(np.array(self.feature_vectors_of_label[label]))
-            self.textons[label] = KMeans(n_clusters=K).fit(X)
+            if use_minibatch:
+                self.textons[label] = MiniBatchKMeans(n_clusters=K).fit(
+                    self.feature_vectors_of_label[label]
+                )
+            else:
+                self.textons[label] = CumlKMeans(n_clusters=K, output_type="numpy").fit(
+                    self.feature_vectors_of_label[label]
+                )
 
             print(
                 "\tExample: ",

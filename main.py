@@ -67,6 +67,8 @@ model.train(
     dev_size=DEV_SIZE,
     precomputed_feature_vectors=None,
     multiscale_statistics_scales=0,
+    use_minibatch=False,
+    minibatch_size=10000,
     verbose=False,
 )
 
