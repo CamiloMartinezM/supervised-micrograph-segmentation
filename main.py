@@ -13,7 +13,7 @@ warnings.simplefilter("ignore", category=NumbaWarning)
 from copy import deepcopy
 
 from model import SegmentationModel
-
+from utils_functions import load_img, find_path_of_img
 # Source directory
 src = ""
 # src = "C:\\Users\\Camilo Martínez\\Google Drive"
