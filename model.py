@@ -876,3 +876,7 @@ class SegmentationModel:
             filename="Segmentation",
         )
         print("Done")
+        
+    def save_labeled_imgs_to_pdf(self) -> None:
+        for img_name in self.windows_per_name:
+            print(img_name)
