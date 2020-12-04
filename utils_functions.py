@@ -5,12 +5,11 @@ Created on Wed Nov 11 17:11:12 2020
 @author: Camilo Martínez
 """
 import os
-import cudf
 import random
-
 from pprint import pprint
 from random import shuffle
 
+import cudf
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
@@ -160,13 +159,25 @@ def print_table_from_dict(data: dict, cols: list, title: str = "") -> None:
     characteristic_value = list(data.values())[0]
 
     if type(characteristic_value) is np.ndarray:
-        for label in sorted(data.keys(), key=lambda x: data[x].shape[0], reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: data[x].shape[0],
+            reverse=True,
+        ):
             table.add_row([label, f"{data[label].shape}"])
     elif type(characteristic_value) is list:
-        for label in sorted(data.keys(), key=lambda x: len(data[x]), reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: len(data[x]),
+            reverse=True,
+        ):
             table.add_row([label, f"{len(data[label])}"])
     else:  # int
-        for label in sorted(data.keys(), key=lambda x: data[x], reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: data[x],
+            reverse=True,
+        ):
             table.add_row([label, f"{data[label]}"])
 
     print(table.get_string(title=title))
