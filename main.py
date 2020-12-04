@@ -13,7 +13,8 @@ warnings.simplefilter("ignore", category=NumbaWarning)
 from copy import deepcopy
 
 from model import SegmentationModel
-from utils_functions import load_img, find_path_of_img
+from utils_functions import find_path_of_img, load_img
+
 # Source directory
 src = ""
 # src = "C:\\Users\\Camilo Martínez\\Google Drive"
@@ -74,9 +75,7 @@ model.train(
 )
 
 # %%
-precomputed_feature_vectors_of_label = deepcopy(
-    model.feature_vectors_of_label
-)
+precomputed_feature_vectors_of_label = deepcopy(model.feature_vectors_of_label)
 
 # %%
 from utils_functions import find_path_of_img
