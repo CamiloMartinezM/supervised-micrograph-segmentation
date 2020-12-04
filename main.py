@@ -22,7 +22,8 @@ src = ""
 TRAIN_SIZE = 0.7
 DEV_SIZE = 0.2
 
-model = SegmentationModel(src=src, as_255=False)
+model = SegmentationModel(src=src, as_255=True)
+model.save_labeled_imgs_to_pdf()
 
 # %%
 

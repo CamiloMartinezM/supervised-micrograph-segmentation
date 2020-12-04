@@ -878,5 +878,37 @@ class SegmentationModel:
         print("Done")
         
     def save_labeled_imgs_to_pdf(self) -> None:
-        for img_name in self.windows_per_name:
-            print(img_name)
+        import cv2
+        
+        color_names = [
+            "red",
+            "blue",
+            "yellow",
+            "orange",
+            "black",
+            "purple",
+            "green",
+            "turquoise"
+        ]
+        
+        colors = {
+            class_: mpl.colors.to_rgb(color_names[i])
+            for i, class_ in enumerate(self.labels.keys())
+        }
+                
+        for name in self.windows_per_name:
+            print(f"[+] Saving {name}... ", end="")
+            gray_img = self.get_array_of_micrograph(name)
+            img = cv2.cvtColor(gray_img, cv2.COLOR_GRAY2RGB)
+            
+            for coords, _, label in enumerate(self.windows_per_name[name]):
+                top_left = coords[0]
+                bottom_right = coords[1]
+                cv2.rectangle(img, top_left, bottom_right, colors[label], 3)
+                
+            fig, ax = plt.subplots(1)
+            ax.imshow(img)
+            plt.show()
+            print("Done")
+            break
+            
