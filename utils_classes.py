@@ -60,6 +60,7 @@ class Scaler:
             np.ndarray: Loaded image. None if an error occurs.
         """
         try:
+            print(os.path.join(self.PATH_PREPROCESSED, folder, "SCALE_" + name))
             return load_img(
                 os.path.join(self.PATH_PREPROCESSED, folder, "SCALE_" + name)
             )
