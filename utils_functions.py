@@ -5,7 +5,6 @@ Created on Wed Nov 11 17:11:12 2020
 @author: Camilo Martínez
 """
 import os
-import random
 from pprint import pprint
 from random import shuffle
 
@@ -19,20 +18,19 @@ from prettytable import PrettyTable
 from skimage import color, io
 
 
-def train_dev_test_split(
-    data: dict, train_size: float = 0.7, dev_size: float = 0.2
-) -> tuple:
+def train_dev_test_split(data: dict, train_size: float, dev_size: float) -> tuple:
     """Splits the given data into three sets (train, development and test set).
 
     Args:
-        data (dict): Complete dataset as a dictionary whose keys are labels and values are the
-                     corresponding annotated image windows as numpy arrays.
+        data (dict): Complete dataset as a dictionary whose keys are labels and values 
+                    are the corresponding annotated image windows as numpy arrays.
         train_size (float): Percentage of the dataset that will be used as training set.
-        dev_size (float): Percentage of the dataset that will be used as development set.
+        dev_size (float): Percentage of the dataset that will be used as development 
+                            set.
 
     Returns:
-        tuple: train, dev and test sets as dictionaries of the same structure as the given dataset.
-
+        tuple: train, dev and test sets as dictionaries of the same structure as the 
+                given dataset.
     """
     if train_size + dev_size > 1:
         raise ValueError("Invalid train and/or dev ratios.")
@@ -99,16 +97,21 @@ def load_img(path: str, as_255: bool = True, with_io: bool = False) -> np.ndarra
 
 
 def get_folder(path: str) -> str:
-    """Gets the name of the folder (High carbon, Medium carbon, Low carbon) of
-        a micrograph, whose path is given.
+    """Gets the name of the folder (High carbon, Medium carbon, Hypoeutectoid steel, 
+    Low carbon) of a micrograph, whose path is given.
 
     Args:
         path (str): Path of the micrograph.
 
     Returns:
-        str: "High carbon", "Medium carbon" or "Low carbon".
+        str: "High carbon", "Medium carbon", "Hypoeutectoid steel" or "Low carbon".
     """
-    possible_folders = ["High carbon", "Medium carbon", "Low carbon"]
+    possible_folders = [
+        "High carbon",
+        "Medium carbon",
+        "Hypoeutectoid steel",
+        "Low carbon",
+    ]
     for possible_folder in possible_folders:
         if possible_folder in path:
             return possible_folder
@@ -159,25 +162,13 @@ def print_table_from_dict(data: dict, cols: list, title: str = "") -> None:
     characteristic_value = list(data.values())[0]
 
     if type(characteristic_value) is np.ndarray:
-        for label in sorted(
-            data.keys(),
-            key=lambda x: data[x].shape[0],
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: data[x].shape[0], reverse=True,):
             table.add_row([label, f"{data[label].shape}"])
     elif type(characteristic_value) is list:
-        for label in sorted(
-            data.keys(),
-            key=lambda x: len(data[x]),
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: len(data[x]), reverse=True,):
             table.add_row([label, f"{len(data[label])}"])
     else:  # int
-        for label in sorted(
-            data.keys(),
-            key=lambda x: data[x],
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: data[x], reverse=True,):
             table.add_row([label, f"{data[label]}"])
 
     print(table.get_string(title=title))
@@ -214,11 +205,11 @@ def train_dev_test_split_table(train: dict, dev: dict, test: dict) -> None:
 
 
 def plot_confusion_matrix(
-    cm: np.ndarray,
+    matrix: np.ndarray,
     target_names: list,
     title: str = "Confusion matrix",
     distinguishable_title: str = None,
-    cmap=plt.cm.Blues,
+    cmap=plt.cm.OrRd,
     dpi: int = 120,
     figsize: tuple = (12, 8),
     savefig: bool = True,
@@ -229,40 +220,49 @@ def plot_confusion_matrix(
     Original: https://stackoverflow.com/questions/35585069/python-tabulating-confusion-matrix
 
     Args:
-        matrix (np.ndarray): Confusion matrix where rows are true classes and columns are predicted
-                             classes.
+        matrix (np.ndarray): Confusion matrix where rows are true classes and columns 
+                             are predicted classes.
         target_names (list): Names of classes.
         title (str, optional): Title of plot. Defaults to "Confusion matrix".
-        distinguishable_title (str, optional): Distinguishable title to add to the name of the file
-                                               to which the plot would be saved. Defaults to None.
-        cmap (TYPE, optional): Colormap to use. Defaults to plt.cm.Blues.
-        dpi (int, optional): DPI of plot. Defaults to 100.
-        figsize (tuple, optional): Figure size. Defaults to (10, 8).
-        savefig (bool, optional): Specifies whether to save the figure in the current directory or
-                                  not. Defaults to True.
-        showfig (bool, optional): Specifies whether to show the figure or not. Defaults to True.
-        format_percentage (bool, optional): True if numbers as percentages are desired. Defaults to
-                                            False.
+        distinguishable_title (str, optional): Distinguishable title to add to the name 
+                                                of the file to which the plot would be 
+                                                saved. Defaults to None.
+        cmap (TYPE, optional): Colormap to use. Defaults to plt.cm.OrRd.
+        dpi (int, optional): DPI of plot. Defaults to 120.
+        figsize (tuple, optional): Figure size. Defaults to (12, 8).
+        savefig (bool, optional): Specifies whether to save the figure in the current 
+                                    directory or not. Defaults to True.
+        showfig (bool, optional): Specifies whether to show the figure or not. Defaults
+                                    to True.
+        format_percentage (bool, optional): True if numbers as percentages are desired. 
+                                            Defaults to False.
     """
     plt.figure(figsize=figsize)
-    plt.imshow(cm, interpolation="nearest", cmap=cmap)
+    plt.imshow(matrix, interpolation="nearest", cmap=cmap)
     plt.title(title)
     plt.colorbar()
     tick_marks = np.arange(len(target_names))
     plt.xticks(tick_marks, target_names, rotation=45)
     plt.yticks(tick_marks, target_names)
-    plt.tight_layout()
+    plt.tight_layout(pad=2)
 
-    width, height = cm.shape
+    width, height = matrix.shape
+
+    if format_percentage:
+        matrix = matrix / matrix.sum(axis=1, keepdims=True)
+        format_str = "{0:.1%}"
+    else:
+        format_str = "{0:.0}"
 
     for x in range(width):
         for y in range(height):
             plt.annotate(
-                str("{0:.1%}".format(cm[x][y])),
+                str(format_str.format(matrix[x][y])),
                 xy=(y, x),
                 horizontalalignment="center",
                 verticalalignment="center",
             )
+
     plt.ylabel("True class")
     plt.xlabel("Predicted class")
 
@@ -284,14 +284,15 @@ def matrix_to_excel(
     path: str = os.getcwd(),
     filename: str = "Test",
 ) -> None:
-    """Exports a square matrix to an excel file. If a file with the given name already exists, a new
-    sheetname is added and the file is not overwritten.
+    """Exports a square matrix to an excel file. If a file with the given name already 
+    exists, a new sheetname is added and the file is not overwritten.
 
     Args:
         matrix (np.ndarray): Data as a matrix.
         cols (list): Labels of each row and column of the given matrix.
         sheetname (str): Sheetname.
-        path (str, optional): Specifies where to put the excel file. Defaults to os.getcwd().
+        path (str, optional): Specifies where to put the excel file. Defaults to current
+                                working directory.
         filename (str, optional): Excel filename. Defaults to "Test".
     """
     filename += ".xlsx"
@@ -320,6 +321,35 @@ def np2cudf(df: np.ndarray) -> cudf.DataFrame:
     for c, column in enumerate(df):
         pdf[str(c)] = df[column]
     return pdf
+
+
+def compare2imgs(
+    img_1: np.ndarray,
+    img_2: np.ndarray,
+    title_1: str = "Original",
+    title_2: str = "Final",
+    dpi=80,
+) -> None:
+    """Shows 2 images side by side.
+
+    Args:
+        img_1 (np.ndarray): Original image loaded as a numpy array.
+        img_2 (np.ndarray): Final image loaded as a numpy array.
+        title_1 (str, optional): Title to put above original image. Defaults to 
+                                 "Original".
+        title_2 (str, optional): Title to put above final image. Defaults to "Final".
+    """
+    plt.figure(figsize=(12, 10), dpi=dpi)
+    plt.subplot(1, 2, 1)
+    plt.title("Original")
+    plt.imshow(img_1, cmap="gray")
+    plt.axis("off")
+    plt.subplot(1, 2, 2)
+    plt.title("CLAHE")
+    plt.imshow(img_2, cmap="gray")
+    plt.axis("off")
+    plt.show()
+    plt.close()
 
 
 def fullprint(*args, **kwargs) -> None:
