@@ -7,6 +7,7 @@ Created on Wed Nov 11 16:59:47 2020
 import os
 from collections import Counter
 from random import randint, shuffle
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
@@ -226,7 +227,9 @@ class SegmentationModel:
                         print("Done")
 
         print_table_from_dict(
-            labels, cols=["Label", "Number"], title="Number of windows per label",
+            labels,
+            cols=["Label", "Number"],
+            title="Number of windows per label",
         )
 
         return labels, windows_per_label, windows_per_name
@@ -391,7 +394,7 @@ class SegmentationModel:
         train_size: float = 0.7,
         dev_size: float = 0.2,
         compute_silhouette_scores: bool = False,
-        use_minibatch: bool =True,
+        use_minibatch: bool = True,
         minibatch_size: int = 10000,
         verbose: bool = True,
     ) -> None:
@@ -539,7 +542,8 @@ class SegmentationModel:
 
         # Matrix which correlates texture texton distances and minimum distances of every pixel.
         A = np.sum(
-            np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09), axis=-1,
+            np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09),
+            axis=-1,
         )
         A_i = A.sum(axis=1)  # Sum over rows (i.e, over all pixels).
         ci = A_i.argmax(
@@ -779,7 +783,9 @@ class SegmentationModel:
                 end="",
             )
             confusion_matrix = self.classification_confusion_matrix(
-                windows, small_test=small_test, max_test_number=max_test_number,
+                windows,
+                small_test=small_test,
+                max_test_number=max_test_number,
             )
             print("Done")
             plot_confusion_matrix(
@@ -811,7 +817,10 @@ class SegmentationModel:
             helper(self.windows_test, "Testing", f"Test, {constant_title}", "Test")
 
     def segmentation_confusion_matrix(
-        self, src: str = "", small_test: bool = False, max_test_number: int = 3,
+        self,
+        src: str = "",
+        small_test: bool = False,
+        max_test_number: int = 3,
     ) -> np.ndarray:
         if src == "":
             src = self.PATH_LABELED
@@ -876,10 +885,10 @@ class SegmentationModel:
             filename="Segmentation",
         )
         print("Done")
-        
+
     def save_labeled_imgs_to_pdf(self) -> None:
         import cv2
-        
+
         color_names = [
             "red",
             "blue",
@@ -888,27 +897,26 @@ class SegmentationModel:
             "black",
             "purple",
             "green",
-            "turquoise"
+            "turquoise",
         ]
-        
+
         colors = {
             class_: mpl.colors.to_rgb(color_names[i])
             for i, class_ in enumerate(self.labels.keys())
         }
-                
+
         for name in self.windows_per_name:
             print(f"[+] Saving {name}... ", end="")
             gray_img = self.get_array_of_micrograph(name)
             img = cv2.cvtColor(gray_img, cv2.COLOR_GRAY2RGB)
-            
+
             for coords, _, label in enumerate(self.windows_per_name[name]):
                 top_left = coords[0]
                 bottom_right = coords[1]
                 cv2.rectangle(img, top_left, bottom_right, colors[label], 3)
-                
+
             fig, ax = plt.subplots(1)
             ax.imshow(img)
             plt.show()
             print("Done")
             break
-            

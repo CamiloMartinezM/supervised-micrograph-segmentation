@@ -7,12 +7,9 @@ Created on Thu Nov 12 06:45:29 2020
 import os
 from itertools import chain, product
 
-# from numba import jit
-
 import matplotlib.cm
 import matplotlib.pyplot as plt
 import numpy as np
-
 from joblib import Parallel, delayed
 from scipy.ndimage import convolve
 from scipy.signal import fftconvolve
@@ -141,7 +138,10 @@ class SLICSegmentation:
     """SLIC algorithm implementation with the library skimage."""
 
     def __init__(
-        self, n_segments: int = 500, sigma: int = 5, compactness: int = 0.1,
+        self,
+        n_segments: int = 500,
+        sigma: int = 5,
+        compactness: int = 0.1,
     ) -> None:
         """
         Args:
