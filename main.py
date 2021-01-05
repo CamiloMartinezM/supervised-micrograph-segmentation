@@ -310,7 +310,7 @@ Ahora, se construye la imagen overlay de tamaño (DESIRED_HEIGHT, DESIRED_WIDTH)
 tendrá los colores de las clases y servirá para distinguir cada una sobre la imagen 
 original."""
 original_img, superpixels, segmentation = model.segment(
-    find_path_of_img("cs0330.png", model.PATH_LABELED),
+    find_path_of_img("as0013.png", model.PATH_LABELED),
     classes,
     T,
     plot_original=False,
