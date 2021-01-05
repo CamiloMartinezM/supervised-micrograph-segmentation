@@ -562,6 +562,7 @@ def predict_class_of(
         np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09), axis=-1
     )
     A_i = A.sum(axis=1)  # Sum over rows (i.e, over all pixels).
+    print(A)
     ci = A_i.argmax(axis=0)  # Class with maximum probability of occurrence is chosen.
 
     if len(known_classes) > 1:  # Assigned class is returned.
