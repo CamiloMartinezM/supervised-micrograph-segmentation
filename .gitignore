@@ -134,4 +134,9 @@ unused/
 Anotadas/
 Preprocesadas/
 .vscode
+
+# Generated
+.png
+.xlsx
 .zip
+

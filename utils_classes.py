@@ -15,15 +15,16 @@ from scipy.ndimage import convolve
 from scipy.signal import fftconvolve
 from skimage.segmentation import mark_boundaries, slic
 
-from utils_functions import get_folder, load_img
+from utils_functions import get_folder, load_img, find_path_of_img
 
 
 class Scaler:
-    """For each of the micrographs there is a scale to which is associated a calibration line
-    (which naturally has a length in pixels) and a real length in micrometers. The following
-    class obtains a dictionary of 'scales', with keys that are the names of each micrograph
-    and the value is the corresponding length of the scale in pixels. Thus, this class
-    contains the information regarding the scale of every micrograph in LABELED.
+    """For each of the micrographs there is a scale to which is associated a calibration 
+    line (which naturally has a length in pixels) and a real length in micrometers. The 
+    following class obtains a dictionary of 'scales', with keys that are the names of 
+    each micrograph and the value is the corresponding length of the scale in pixels. 
+    Thus, this class contains the information regarding the scale of every micrograph 
+    in LABELED.
     """
 
     def __init__(
@@ -36,10 +37,11 @@ class Scaler:
         """
         Args:
             startpath (str): Directory where labeled micrographs lie.
-            split_in_half (bool, optional): If True, the algorithm will split the image in 2 by its
-                                            width to speed up the process. Defaults to True.
-            minimum_zeros_check (int, optional): Minimum zeroes to consider a line to be the actual
-                                                 scale. Defaults to 100.
+            split_in_half (bool, optional): If True, the algorithm will split the image
+                                            in 2 by its width to speed up the process. 
+                                            Defaults to True.
+            minimum_zeros_check (int, optional): Minimum zeroes to consider a line to be
+                                                 the actual scale. Defaults to 100.
         """
         self.startpath = startpath
         self.PATH_PREPROCESSED = path_preprocessed
@@ -57,7 +59,6 @@ class Scaler:
             np.ndarray: Loaded image. None if an error occurs.
         """
         try:
-            print(os.path.join(self.PATH_PREPROCESSED, folder, "SCALE_" + name))
             return load_img(
                 os.path.join(self.PATH_PREPROCESSED, folder, "SCALE_" + name)
             )
@@ -120,7 +121,7 @@ class Scaler:
             for f in files:
                 if f.endswith(".png"):
                     print("[+] Processing " + str(f) + "... ", end="")
-                    folder = get_folder(path)
+                    folder = get_folder(find_path_of_img(f, self.PATH_PREPROCESSED))
                     if folder is not None:
                         scale = self.get_scale(f, folder)
                         if scale is not None:
@@ -138,10 +139,7 @@ class SLICSegmentation:
     """SLIC algorithm implementation with the library skimage."""
 
     def __init__(
-        self,
-        n_segments: int = 500,
-        sigma: int = 5,
-        compactness: int = 0.1,
+        self, n_segments: int = 500, sigma: int = 5, compactness: int = 0.1,
     ) -> None:
         """
         Args:
@@ -166,7 +164,7 @@ class SLICSegmentation:
             n_segments=self.n_segments,
             sigma=self.sigma,
             compactness=self.compactness,
-            start_label=1,
+            start_label=1
         )
         return segments
 
@@ -278,11 +276,11 @@ class FilterBankMR8:
         rot = np.asarray(rot)[:, np.newaxis, :, :]
         return edge, bar, rot
 
-    def plot_filters(self) -> None:
+    def plot_filters(self, dpi: int = 80) -> None:
         # plot filters
         # 2 is for bar / edge, + 1 for rot
         fig, ax = plt.subplots(self.n_sigmas * 2 + 1, self.n_orientations)
-        fig.set_dpi(150)
+        fig.set_dpi(dpi)
         for k, filters in enumerate([self.bar, self.edge]):
             for i, j in product(range(self.n_sigmas), range(self.n_orientations)):
                 row = i + k * self.n_sigmas
@@ -300,10 +298,11 @@ class FilterBankMR8:
         for i in range(2, self.n_orientations):
             ax[-1, i].set_visible(False)
         fig.tight_layout()
-        fig.savefig("filters.png", dpi=300)
+        plt.show()
+        plt.close()
+        # fig.savefig("filters.png", dpi=dpi)
 
     @staticmethod
-    # @jit
     def apply_filterbank(
         img: np.ndarray, filterbank: tuple, use_fftconvolve: bool
     ) -> np.ndarray:
@@ -322,9 +321,9 @@ class FilterBankMR8:
 
 
 class MultiscaleStatistics:
-    """This class generates the feature vectors of an image based on multiscale statistics in a
-    procedure described in
-    G. Impoco, L. Tuminello, N. Fucà, M. Caccamo, G. Licitra,
+    """This class generates the feature vectors of an image based on multiscale 
+    statistics in a procedure described in G. Impoco, L. Tuminello, N. Fucà, M. Caccamo,
+    G. Licitra,
     Segmentation of structural features in cheese micrographs using pixel statistics,
     Computers and Electronics in Agriculture,
     Volume 79, Issue 2,
@@ -337,10 +336,11 @@ class MultiscaleStatistics:
     def __init__(self, scales: int = 3):
         """
         Args:
-            scales (int, optional): Number of scales to consider. Each scale represents a
-                                    neighborhood around a pixel. The first scale is the inmediate
-                                    neighborhood of a pixel, the second one is the neighborhood
-                                    around the previous one and so on. Defaults to 3.
+            scales (int, optional): Number of scales to consider. Each scale represents 
+                                    a neighborhood around a pixel. The first scale is 
+                                    the inmediate neighborhood of a pixel, the second 
+                                    one is the neighborhood around the previous one and 
+                                    so on. Defaults to 3.
         """
         self.scales = scales
 
@@ -356,7 +356,8 @@ class MultiscaleStatistics:
             scales (int, optional): Number of scales to consider. Defaults to 3.
 
         Returns:
-            np.ndarray: Feature vectors of the input image of shape (*img.shape, 4*3*scales).
+            np.ndarray: Feature vectors of the input image of shape 
+                        (*img.shape, 4*3*scales).
         """
         directions = 4
         gx_img, gy_img = np.gradient(img)
