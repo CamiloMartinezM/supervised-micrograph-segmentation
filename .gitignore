@@ -136,6 +136,7 @@ Preprocesadas/
 .vscode
 
 # Generated
+various_images/
 .png
 .xlsx
 .zip
