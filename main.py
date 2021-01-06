@@ -6,11 +6,11 @@ Created on Thu Nov 12 08:42:22 2020
 """
 import model
 from utils_functions import (
+    compare2imgs,
     find_path_of_img,
+    load_img,
     train_dev_test_split,
     train_dev_test_split_table,
-    load_img,
-    compare2imgs
 )
 
 print(f"\nPath to labeled micrographs: {model.PATH_LABELED}")
@@ -95,7 +95,8 @@ labels, windows, windows_per_name = model.extract_labeled_windows(
     micrographs, index_to_name, exclude=["Low carbon"]
 )
 
-"""Train-dev-test split
+"""Train/dev/test split
+
 Estas imágenes fueron subdividas en conjuntos de datos para entrenamiento, validación y 
 prueba, siguiente una división aleatoria del 70%, 20% y 10% respectivamente. Es 
 importante destacar que, dada la naturaleza del modelo planteado, el cual no tiene en 
@@ -108,22 +109,38 @@ conjunto (entrenamiento, validación o prueba) justo las imágenes que no poseen
 anotaciones de cierta clase. Esto haría o que no se entrene el modelo para reconocer 
 dicha clase o que sí se entrene, pero no sea validado o probado. 
 """
-windows_train, windows_dev, windows_test = train_dev_test_split(
-    windows, train_size=0.7, dev_size=0.2
-)
+(
+    training_set,
+    development_set,
+    test_set,
+    windows_train,
+    windows_dev,
+    windows_test,
+) = train_dev_test_split(windows, train_size=0.7, dev_size=0.2)
 
 # Table that summarizes the number of windows noted by class or label that correspond
 # to the phases or morphologies of interest in the micrographs.
 train_dev_test_split_table(windows_train, windows_dev, windows_test)
 
 """Entrenamiento del modelo
+
 A continuación, se muestra una función que entrena el modelo, primero construyendo la 
 matriz de *feature vectors* para cada una de las clases, y luego haciendo un 
 *clustering* que aprenda los textones asociados a cada una de ellas.
 """
-feature_vectors_of_label, classes, T, _ = model.train(100, windows_train)
+K = 100
+feature_vectors_of_label, classes, T, _ = model.train(K, windows_train)
+
+
+"""Carga de las imágenes ground truth.
+
+Las imágenes segmentadas (ground truth) se guardan en un diccionario cuyas llaves son los
+nombres de las imágenes y los valores son las respectivas segmentaciones.
+"""
+ground_truth = model.load_ground_truth("(Segmented)HypoeutectoidSteel.tif", classes)
 
 """Segmentación
+
 En primer lugar, se obtienen los superpíxeles de la imagen de prueba, al igual que los 
 *feature vectors* de cada uno de ellos. 
 
@@ -146,4 +163,24 @@ original_img, superpixels, segmentation = model.segment(
     verbose=True,
 )
 
+"""Evaluación de rendimiento"""
+model.evaluate_classification_performance(
+    K,
+    classes,
+    windows_train,
+    windows_dev,
+    windows_test,
+    plot_fig=False,
+)
+
+model.evaluate_segmentation_performance(
+    training_set,
+    ground_truth,
+    classes,
+    K,
+    n=1000,
+    sigma=5,
+    compactness=0.17,
+    plot_fig=False,
+)
 model.visualize_segmentation(original_img, classes, superpixels, segmentation)
