@@ -4,9 +4,11 @@ Created on Wed Nov 11 17:11:12 2020
 
 @author: Camilo Martínez
 """
+import itertools
 import os
+import random
+import textwrap
 from pprint import pprint
-from random import shuffle
 
 import cudf
 import matplotlib.image as mpimg
@@ -18,19 +20,20 @@ from prettytable import PrettyTable
 from skimage import color, io
 
 
-def train_dev_test_split(data: dict, train_size: float, dev_size: float) -> tuple:
+def train_dev_test_split(
+    data: dict, train_size: float = 0.7, dev_size: float = 0.2
+) -> tuple:
     """Splits the given data into three sets (train, development and test set).
 
     Args:
-        data (dict): Complete dataset as a dictionary whose keys are labels and values 
-                    are the corresponding annotated image windows as numpy arrays.
+        data (dict): Complete dataset as a dictionary whose keys are labels and values are the
+                     corresponding annotated image windows as numpy arrays.
         train_size (float): Percentage of the dataset that will be used as training set.
-        dev_size (float): Percentage of the dataset that will be used as development 
-                            set.
+        dev_size (float): Percentage of the dataset that will be used as development set.
 
     Returns:
-        tuple: train, dev and test sets as dictionaries of the same structure as the 
-                given dataset.
+        tuple: train, dev and test sets as dictionaries of the same structure as the given dataset.
+
     """
     if train_size + dev_size > 1:
         raise ValueError("Invalid train and/or dev ratios.")
@@ -41,7 +44,7 @@ def train_dev_test_split(data: dict, train_size: float, dev_size: float) -> tupl
 
     # Randomize values of dictionary.
     for label in data:
-        shuffle(data[label])
+        random.shuffle(data[label])
 
     # Split values in 3 dictionaries.
     for label in data:
@@ -74,7 +77,7 @@ def rgb2gray(rgb: np.ndarray) -> np.ndarray:
             return color.rgb2gray(rgb)
 
 
-def load_img(path: str, as_255: bool = True, with_io: bool = False) -> np.ndarray:
+def load_img(path: str, as_255: bool = False, with_io: bool = False) -> np.ndarray:
     """Loads the image in a numpy.ndarray and converts it to gray scale if possible.
 
     Args:
@@ -97,21 +100,16 @@ def load_img(path: str, as_255: bool = True, with_io: bool = False) -> np.ndarra
 
 
 def get_folder(path: str) -> str:
-    """Gets the name of the folder (High carbon, Medium carbon, Hypoeutectoid steel, 
-    Low carbon) of a micrograph, whose path is given.
+    """Gets the name of the folder (High carbon, Medium carbon, Low carbon) of
+        a micrograph, whose path is given.
 
     Args:
         path (str): Path of the micrograph.
 
     Returns:
-        str: "High carbon", "Medium carbon", "Hypoeutectoid steel" or "Low carbon".
+        str: "High carbon", "Medium carbon" or "Low carbon".
     """
-    possible_folders = [
-        "High carbon",
-        "Medium carbon",
-        "Hypoeutectoid steel",
-        "Low carbon",
-    ]
+    possible_folders = ["High carbon", "Medium carbon", "Low carbon"]
     for possible_folder in possible_folders:
         if possible_folder in path:
             return possible_folder
@@ -162,13 +160,25 @@ def print_table_from_dict(data: dict, cols: list, title: str = "") -> None:
     characteristic_value = list(data.values())[0]
 
     if type(characteristic_value) is np.ndarray:
-        for label in sorted(data.keys(), key=lambda x: data[x].shape[0], reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: data[x].shape[0],
+            reverse=True,
+        ):
             table.add_row([label, f"{data[label].shape}"])
     elif type(characteristic_value) is list:
-        for label in sorted(data.keys(), key=lambda x: len(data[x]), reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: len(data[x]),
+            reverse=True,
+        ):
             table.add_row([label, f"{len(data[label])}"])
     else:  # int
-        for label in sorted(data.keys(), key=lambda x: data[x], reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: data[x],
+            reverse=True,
+        ):
             table.add_row([label, f"{data[label]}"])
 
     print(table.get_string(title=title))
@@ -205,11 +215,11 @@ def train_dev_test_split_table(train: dict, dev: dict, test: dict) -> None:
 
 
 def plot_confusion_matrix(
-    matrix: np.ndarray,
+    cm: np.ndarray,
     target_names: list,
     title: str = "Confusion matrix",
     distinguishable_title: str = None,
-    cmap=plt.cm.OrRd,
+    cmap=plt.cm.Blues,
     dpi: int = 120,
     figsize: tuple = (12, 8),
     savefig: bool = True,
@@ -220,49 +230,40 @@ def plot_confusion_matrix(
     Original: https://stackoverflow.com/questions/35585069/python-tabulating-confusion-matrix
 
     Args:
-        matrix (np.ndarray): Confusion matrix where rows are true classes and columns 
-                             are predicted classes.
+        matrix (np.ndarray): Confusion matrix where rows are true classes and columns are predicted
+                             classes.
         target_names (list): Names of classes.
         title (str, optional): Title of plot. Defaults to "Confusion matrix".
-        distinguishable_title (str, optional): Distinguishable title to add to the name 
-                                                of the file to which the plot would be 
-                                                saved. Defaults to None.
-        cmap (TYPE, optional): Colormap to use. Defaults to plt.cm.OrRd.
-        dpi (int, optional): DPI of plot. Defaults to 120.
-        figsize (tuple, optional): Figure size. Defaults to (12, 8).
-        savefig (bool, optional): Specifies whether to save the figure in the current 
-                                    directory or not. Defaults to True.
-        showfig (bool, optional): Specifies whether to show the figure or not. Defaults
-                                    to True.
-        format_percentage (bool, optional): True if numbers as percentages are desired. 
-                                            Defaults to False.
+        distinguishable_title (str, optional): Distinguishable title to add to the name of the file
+                                               to which the plot would be saved. Defaults to None.
+        cmap (TYPE, optional): Colormap to use. Defaults to plt.cm.Blues.
+        dpi (int, optional): DPI of plot. Defaults to 100.
+        figsize (tuple, optional): Figure size. Defaults to (10, 8).
+        savefig (bool, optional): Specifies whether to save the figure in the current directory or
+                                  not. Defaults to True.
+        showfig (bool, optional): Specifies whether to show the figure or not. Defaults to True.
+        format_percentage (bool, optional): True if numbers as percentages are desired. Defaults to
+                                            False.
     """
     plt.figure(figsize=figsize)
-    plt.imshow(matrix, interpolation="nearest", cmap=cmap)
+    plt.imshow(cm, interpolation="nearest", cmap=cmap)
     plt.title(title)
     plt.colorbar()
     tick_marks = np.arange(len(target_names))
     plt.xticks(tick_marks, target_names, rotation=45)
     plt.yticks(tick_marks, target_names)
-    plt.tight_layout(pad=2)
+    plt.tight_layout()
 
-    width, height = matrix.shape
-
-    if format_percentage:
-        matrix = matrix / matrix.sum(axis=1, keepdims=True)
-        format_str = "{0:.1%}"
-    else:
-        format_str = "{0:.0}"
+    width, height = cm.shape
 
     for x in range(width):
         for y in range(height):
             plt.annotate(
-                str(format_str.format(matrix[x][y])),
+                str("{0:.1%}".format(cm[x][y])),
                 xy=(y, x),
                 horizontalalignment="center",
                 verticalalignment="center",
             )
-
     plt.ylabel("True class")
     plt.xlabel("Predicted class")
 
@@ -284,15 +285,14 @@ def matrix_to_excel(
     path: str = os.getcwd(),
     filename: str = "Test",
 ) -> None:
-    """Exports a square matrix to an excel file. If a file with the given name already 
-    exists, a new sheetname is added and the file is not overwritten.
+    """Exports a square matrix to an excel file. If a file with the given name already exists, a new
+    sheetname is added and the file is not overwritten.
 
     Args:
         matrix (np.ndarray): Data as a matrix.
         cols (list): Labels of each row and column of the given matrix.
         sheetname (str): Sheetname.
-        path (str, optional): Specifies where to put the excel file. Defaults to current
-                                working directory.
+        path (str, optional): Specifies where to put the excel file. Defaults to os.getcwd().
         filename (str, optional): Excel filename. Defaults to "Test".
     """
     filename += ".xlsx"
@@ -335,7 +335,7 @@ def compare2imgs(
     Args:
         img_1 (np.ndarray): Original image loaded as a numpy array.
         img_2 (np.ndarray): Final image loaded as a numpy array.
-        title_1 (str, optional): Title to put above original image. Defaults to 
+        title_1 (str, optional): Title to put above original image. Defaults to
                                  "Original".
         title_2 (str, optional): Title to put above final image. Defaults to "Final".
     """
@@ -358,3 +358,28 @@ def fullprint(*args, **kwargs) -> None:
     np.set_printoptions(threshold=np.inf)
     pprint(*args, **kwargs)
     np.set_printoptions(**opt)
+
+
+def formatter(format_str, widths, *columns):
+    """
+    format_str describes the format of the report.
+    {row[i]} is replaced by data from the ith element of columns.
+
+    widths is expected to be a list of integers.
+    {width[i]} is replaced by the ith element of the list widths.
+
+    All the power of Python's string format spec is available for you to use
+    in format_str. You can use it to define fill characters, alignment, width, type, etc.
+
+    formatter takes an arbitrary number of arguments.
+    Every argument after format_str and widths should be a list of strings.
+    Each list contains the data for one column of the report.
+
+    formatter returns the report as one big string.
+    """
+    result = []
+    for row in zip(*columns):
+        lines = [textwrap.wrap(elt, width=num) for elt, num in zip(row, widths)]
+        for line in itertools.zip_longest(*lines, fillvalue=""):
+            result.append(format_str.format(width=widths, row=line))
+    return "\n".join(result)
