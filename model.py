@@ -50,12 +50,12 @@ PATH_PREPROCESSED = os.path.join(src, preprocessed)
 
 
 def load_scales() -> dict:
-    """Loads the scale of the images by going to PREPROCESSED and finding the corresponding
-    SCALE image of every image in LABELED.
+    """Loads the scale of the images by going to PREPROCESSED and finding the 
+    corresponding SCALE image of every image in LABELED.
 
     Returns:
-        dict: Dictionary whose keys are names of images and values are their respective scale
-              pixel length.
+        dict: Dictionary whose keys are names of images and values are their respective 
+              scale pixel length.
     """
     print("\n[*] SCALES EXTRACTION:\n")
     myScaler = Scaler(PATH_LABELED, PATH_PREPROCESSED)
@@ -74,6 +74,9 @@ def load_scales() -> dict:
 def load_imgs(exclude: list = []) -> tuple:
     """Loads images in LABELED in a numpy array.
 
+    Args:
+        exclude (list, optional): Folders to exclude in loading. Defaults to [].
+        
     Returns:
         tuple: Numpy array with all images, dictionary whose keys are names of images and values
                are the corresponding indeces in the numpy array of images.
@@ -101,15 +104,24 @@ def load_imgs(exclude: list = []) -> tuple:
 
 
 def preprocess_with_clahe(src: str) -> None:
+    """Preprocess the images on the given path.
+    
+    Args:
+        src (str): Path where to process images.
+    """
     check_file = "already_preprocessed.txt"
 
     def already_preprocessed() -> bool:
+        """Checks if the given path has previously been preprocessed."""
         if check_file in os.listdir(src):
             return True
         else:
             return False
 
     def mark_as_preprocessed() -> None:
+        """Marks the given path as preprocessed by creating a file called
+        'already_preprocessed.txt'.
+        """
         try:
             with open(check_file, "w") as f:
                 f.write("Already preprocessed.")
@@ -144,6 +156,10 @@ def get_array_of_micrograph(
 
     Args:
         name (str): Name of image.
+        micrographs (dict): Numpy array with all images.
+        index_to_name (dict): Dictionary whose keys are names of images and values
+                              are the corresponding indeces in the numpy array of 
+                              images.
 
     Returns:
         np.ndarray: Numpy array of image.
@@ -154,18 +170,34 @@ def get_array_of_micrograph(
 def extract_labeled_windows(
     micrographs: dict, index_to_name: dict, exclude: list = []
 ) -> tuple:
-    """Within LABELED, each of the images has a .txt file associated with it that contains the
-    information of the position of each of its regions or windows that were annotated. This
-    section is then in charge of extracting said regions by slicing the numpy array of an image
-    accordingly to get each of its labeled windows.
+    """Within LABELED, each of the images has a .txt file associated with it that
+    contains the information of the position of each of its regions or windows that 
+    were annotated. This section is then in charge of extracting said regions by slicing
+    the numpy array of an image accordingly to get each of its labeled windows.
 
+    Args:
+        micrographs (dict): Numpy array with all images.
+        index_to_name (dict): Dictionary whose keys are names of images and values
+                              are the corresponding indeces in the numpy array of 
+                              images.
+        exclude (list, optional): Folders to exclude in loading. Defaults to [].
+        
     Returns:
-        tuple: dictionary of label counts; dictionary of windows whose keys are the labels and
-               values are a list of numpy arrays, which are the windows associated with the
-               label; and dictionary of windows and respective labels per loaded image.
+        tuple: Dictionary of label counts; dictionary of windows whose keys are the 
+               labels and values are a list of numpy arrays, which are the windows 
+               associated with the label; and dictionary of windows and respective 
+               labels per loaded image.
     """
 
     def check_label(label: str) -> str:
+        """Makes sure all label names are consistent.
+            
+        Args:
+            label (str): Input label.
+            
+        Returns:
+            str: Consistent label name.
+        """
         translation_dictionary = {
             "perlita": "pearlite",
             "ferrita": "ferrite",
@@ -272,6 +304,16 @@ def extract_labeled_windows(
 def slice_by_corner_coords(
     img: np.ndarray, first_point: tuple, second_point: tuple
 ) -> np.ndarray:
+    """Slices a numpy array using 2 coordinates: upper left and lower right.
+    
+    Args:
+        img (np.ndarray): Image to slice.
+        first_point (tuple): First coordinate.
+        second_point (tuple). Second coordinate.
+        
+    Returns:
+        np.ndarray: sliced image.
+    """
     return img[first_point[1] : second_point[1], first_point[0] : second_point[0]]
 
 
@@ -333,7 +375,7 @@ def get_feature_vector_of_window(window: np.ndarray, ravel: bool = False) -> tup
                                 original image shape.
     Returns:
         tuple: Feature vector of the given window and the number of pixels whose feature vector
-        was calculated.
+               was calculated.
     """
     response_img = get_response_vector(window)
     num_pixels = response_img.size
@@ -359,8 +401,7 @@ def get_feature_vectors_of_labels(windows: dict, verbose: bool = True) -> dict:
 
     Args:
         windows (dict): Dictionary of windows per label.
-        multiscale_statistics_scales (int): Number of scales to consider when computing
-                                            multiscales statistics.
+        verbose (bool): True is additional information is needed. Defaults to True.
 
     Returns:
         dict: Dictionary of feature vectors per label. Keys corresponds to labels and values are
@@ -414,19 +455,27 @@ def train(
     compute_clustering_entropy: bool = False,
     verbose: bool = True,
 ) -> None:
-    """Trains the model by setting K equal to the number of clusters to be learned in K-means,
-    i.e, the number of textons.
-
+    """Trains the model by setting K equal to the number of clusters to be learned in 
+    K-means, i.e, the number of textons.
+    
     Args:
-        K (int, optional): K-means algorithm parameter.
-        include_dev_on_training (bool, optional): True if the development set is to be included in
-                                                  training. Defaults to False.
-        precomputed_feature_vectors (dict, optional): Precomputed feature vectors of labels to use.
-                                                      Defaults to None.
-        compute_clustering_entropy (bool, optional): True if the clustering entropy is to be computed.
-                                                     Defaults to False.
-        verbose (bool, optional): Specifies whether to include aditional information on console.
-                                  Defaults to True.
+        K (int): K-Means algorithm parameter. 
+        windows_train (dict): Training set.
+        windows_dev (dict, optional): Development set. If it is not None, it is included
+                                        on training. Defaults to None.
+        precomputed_feature_vectors (dict, optional): Precomputed feature vectors of 
+                                                        labels to use. Defaults to None.
+        minibatch_size (int, optional): Minibatch size paraemter in MiniBatchKMeans in
+                                        case this method is going to be used and not
+                                        CumlKMeans. Defaults to None.
+        compute_clustering_entropy (bool, optional): True if the clustering entropy is 
+                                                     to be computed. Defaults to False.
+        verbose (bool, optional): Specifies whether to include aditional information on
+                                    console. Defaults to True.
+                                    
+    Returns:
+        tuple: feature_vectors (dict), classes (list), texton matrix (np.ndarray) and
+                clustering entropy (dict).
     """
     print("\n[*] TRAINING:\n")
 
@@ -481,10 +530,10 @@ def train(
         print("\tDone")
 
     # Matrix of texture textons
-    # Once the textons have been learned for each of the classes, it is possible to construct a
-    # matrix T of shape (C, K, 8) where each of the rows is a class and each column has the
-    # texton k for k < K. Note that said texton must have 8 dimensions, since the pixels were
-    # represented precisely by 8 dimensions.
+    # Once the textons have been learned for each of the classes, it is possible to 
+    # construct a matrix T of shape (C, K, 8) where each of the rows is a class and 
+    # each column has the texton k for k < K. Note that said texton must have 8 
+    # dimensions, since the pixels were represented precisely by 8 dimensions.
     T = np.zeros((C, K, 8), dtype=np.float64)
     for i, label in enumerate(classes):
         T[i] = textons[label].cluster_centers_
@@ -492,14 +541,15 @@ def train(
     return feature_vectors_of_label, classes, T, clustering_entropy
 
 
-def get_closest_texton_vector(feature_vectors: np.ndarray, T) -> np.ndarray:
+def get_closest_texton_vector(feature_vectors: np.ndarray, T: np.ndarray) -> np.ndarray:
     """Obtains a vector whose values are the minimum distances of each pixel of a
-    superpixel. For example, if a superpixel has 300 pixels, this function returns a (300,)
-    vector, where each value is the minimum distance of an enumerated pixel.
-
+    superpixel. For example, if a superpixel has 300 pixels, this function returns a 
+    (300,) vector, where each value is the minimum distance of an enumerated pixel.
+    
     Args:
         feature_vectors (np.ndarray): Output of get_feature_vectors_of_superpixel.
-
+        T (np.ndarray): Texton matrix.
+        
     Returns:
         np.ndarray: Minimum distance vector.
     """
@@ -510,28 +560,31 @@ def get_closest_texton_vector(feature_vectors: np.ndarray, T) -> np.ndarray:
     return minimum_distance_vector
 
 
-def get_distance_matrix(feature_vectors: np.ndarray, T) -> np.ndarray:
+def get_distance_matrix(feature_vectors: np.ndarray, T: np.ndarray) -> np.ndarray:
     """Obtains a matrix which has the information of all possible distances from a pixel of
     a superpixel to every texton of every class.
 
     Args:
         feature_vectors (np.ndarray): Feature vectors of the superpixel.
+        T (np.ndarray): Texton matrix.
 
     Returns:
-        np.ndarray: Matrix of shape (10, NUM_PIXELS, K). Every (i, j, k) matrix value
+        np.ndarray: Matrix of shape (C, NUM_PIXELS, K). Every (i, j, k) matrix value
                     corresponds to the distance from the i-th pixel to the k-th texton of
                     the j-th class.
     """
     return np.linalg.norm(feature_vectors[:, np.newaxis] - T[:, np.newaxis, :], axis=-1)
 
 
-def predict_class_of(feature_vectors: np.ndarray, classes, T) -> str:
+def predict_class_of(feature_vectors: np.ndarray, classes: np.ndarray, T: np.ndarray) -> str:
     """Predicts the class/label given the feature vectors that describe an image or a
     window of an image (like a superpixel).
 
     Args:
         feature_vectors (np.ndarray): Feature vectors of the image or window.
-
+        classes (np.ndarray): Array of classes/labels.
+        T (np.ndarray): Texton matrix.
+        
     Returns:
         str: Predicted class.
     """
@@ -552,8 +605,8 @@ def predict_class_of(feature_vectors: np.ndarray, classes, T) -> str:
 
 def segment(
     img_name: str,
-    classes,
-    T,
+    classes: np.ndarray,
+    T: np.ndarray,
     n_segments: int = 500,
     sigma: int = 5,
     compactness: int = 0.1,
@@ -562,28 +615,32 @@ def segment(
     verbose: bool = False,
 ) -> tuple:
     """Segments an image. The model must have been trained before.
-
+    
     Args:
         img_name (str): Name of image to be segmented.
-        n_segments (int, optional): Maximum number of superpixels to generate. Defaults to 500.
+        classes (np.ndarray): Array of classes/labels.
+        T (np.ndarray): Texton matrix.
+        n_segments (int, optional): Maximum number of superpixels to generate. Defaults 
+                                     to 500.
         sigma (int, optional): SLIC algorithm parameter. Defaults to 5.
         compactness (int, optional): SLIC algorithm parameter. Defaults to 0.1.
-        plot_original (bool, optional): True if a plot of the original micrograph is desired.
-                                        Defaults to True.
-        plot_superpixels (bool, optional): True if a plot of the superpixel generation is
-                                           desired. Defaults to False.
-        verbose (bool, optional): True if additional prints regarding the assignment of a class
-                                  to a superpixel are desired. Defaults to False.
+        plot_original (bool, optional): True if a plot of the original micrograph is 
+                                        desired. Defaults to True.
+        plot_superpixels (bool, optional): True if a plot of the superpixel generation 
+                                            is desired. Defaults to False.
+        verbose (bool, optional): True if additional prints regarding the assignment of 
+                                    a class to a superpixel are desired. Defaults to 
+                                    False.
     """
 
     def get_superpixels(segments: np.ndarray) -> dict:
         """Creates a dictionary whose key corresponds to a superpixel and its value
         is a list of tuples which represent the coordinates of pixels belonging
         to the superpixel.
-
+        
         Args:
             segments (np.ndarray): Output of SLIC algorithm.
-
+            
         Returns:
             dict: Dictionary representation of the superpixels.
         """
@@ -595,18 +652,18 @@ def segment(
     def get_feature_vectors_of_superpixel(
         responses: np.ndarray, superpixel: dict
     ) -> dict:
-        """Creates a dictionary whose key corresponds to a pixel in tuple form and its value
-        is the response/feature vector of that pixel.
-
+        """Creates a dictionary whose key corresponds to a pixel in tuple form and its 
+        value is the response/feature vector of that pixel.
+        
         Args:
-            responses (np.ndarray): Obtained from the function get_response_vector applied
-                                    to the test image, whose superpixels are stored in the
-                                    next arg.
+            responses (np.ndarray): Obtained from the function get_response_vector 
+                                    applied to the test image, whose superpixels are 
+                                    stored in the next arg.
             superpixel (dict): Ouput of the function get_superpixels.
-
+            
         Returns:
             dict: Dictionary representation of the feature vectors of every pixel inside
-                  every superpixel.
+                    every superpixel.
         """
         S = {}
         for pixel in superpixel:
@@ -641,10 +698,10 @@ def segment(
     def feature_vector_of(superpixel: int) -> np.ndarray:
         """Obtains the totality of the feature vectors of a superpixel as a numpy array
         (It includes all the pixels belonging to the given superpixel).
-
+        
         Args:
             superpixel (int): Superpixel.
-
+            
         Returns:
             np.ndarray: Feature vectors of a superpixel.
         """
@@ -668,12 +725,13 @@ def segment(
 
 
 def visualize_segmentation(
-    original_img: np.ndarray, classes, S: dict, S_segmented: dict
+    original_img: np.ndarray, classes: np.ndarray, S: dict, S_segmented: dict
 ) -> None:
     """Plots a segmentation result on top of the original image.
 
     Args:
         original_img (np.ndarray): Numpy array associated with the original image.
+        classes (np.ndarray): Array of classes/labels.
         S (dict): Original dictionary of superpixels obtained from SLIC.
         S_segmented (dict): Segmentation result.
     """
@@ -725,12 +783,13 @@ def visualize_segmentation(
 
 
 def segmentation_to_class_matrix(
-    classes, S: dict, S_segmented: dict, shape: tuple
+    classes: np.ndarray, S: dict, S_segmented: dict, shape: tuple
 ) -> np.ndarray:
     """Obtains a matrix of the given shape where each pixel of position i, j corresponds to the
     predicted class of that pixel.
 
     Args:
+        classes (np.ndarray): Array of classes/labels.
         S (dict): Dictionary of initially extracted superpixels.
         S_segmented (dict): Segmentation result.
         shape (tuple): Image shape.
@@ -748,8 +807,27 @@ def segmentation_to_class_matrix(
 
 
 def classification_confusion_matrix(
-    classes, windows: dict, small_test: bool = False, max_test_number: int = 3
+    classes: np.ndarray, windows: dict, max_test_number: int = -1
 ) -> np.ndarray:
+    """Obtains the confusion matrix for classification. Essentially, this confusion
+    matrix evaluates how good the model classifies each labeled window. In other words,
+    if the model predicts the correct label for a labeled window. Note that this is
+    different from the segmentation problem and should not be used as a direct estimator
+    for the model's segmentation performance.
+
+    Args:
+        classes (np.ndarray): Array of classes/labels.
+        windows (dict): Dictionary of labeled windows. These labeled windows are 
+                        classified by the model and the result is tested against the 
+                        known label.
+        max_test_number (int, optional): Maximum number of labeled windows to take into
+                                         account for evaluating classification
+                                         performance. If set to -1, all labeled windows
+                                         are taken. Defaults to -1.
+
+    Returns:
+        np.ndarray: Confusion matrix (un-normalized).
+    """
     C = len(classes)
     confusion_matrix = np.zeros((C, C))
     for i, label in enumerate(classes):
@@ -761,24 +839,55 @@ def classification_confusion_matrix(
             predicted_class_index = np.where(classes == predicted_class)[0][0]
             confusion_matrix[i, predicted_class_index] += 1
 
-        if small_test and i == max_test_number:
+        if i == max_test_number:
             break
 
-    return confusion_matrix / confusion_matrix.sum(axis=1, keepdims=True)
+    return confusion_matrix
 
 
 def evaluate_classification_performance(
-    K,
-    classes,
+    K: int,
+    classes: np.ndarray,
     windows_train: dict = None,
     windows_dev: dict = None,
     windows_test: dict = None,
-    plot: bool = True,
-    savefig: bool = True,
-    small_test: bool = False,
-    max_test_number: int = 3,
+    plot_fig: bool = True,
+    save_png: bool = True,
+    save_xlsx: bool = True,
+    max_test_number: int = -1,
 ) -> None:
-    def helper(windows: dict, category: str, img_filename: str, excel_filename: str):
+    """Evaluates the model's classification performance by creating the corresponding 
+    classification confusion matrices for training, development and test set (if they
+    are requested) and provides the option to plot them, save them as a .png and 
+    .xlsx file.
+
+    Args:
+        K (int): K-Means algorithm parameter. 
+        classes (np.ndarray): Array of classes/labels.
+        windows_train (dict, optional): Training set. Defaults to None.
+        windows_dev (dict, optional): Development set. Defaults to None.
+        windows_test (dict, optional): Test set. Defaults to None.
+        plot_fig (bool, optional): Specifies whether to plot the generated figures. 
+                                   Defaults to True.
+        save_png (bool, optional): Specifies whether to save the generated figures to
+                                   the filesystem as .png files. Defaults to True.
+        save_xlsx (bool, optional): Specifies whether to save the generated figures to
+                                    the filesystem as a .xlsx file. Defaults to True.
+        max_test_number (int, optional): Maximum number of labeled windows to take into
+                                         account for evaluating classification
+                                         performance. If set to -1, all labeled windows
+                                         are taken. Defaults to -1.
+    """
+    def helper(windows: dict, category: str, img_filename: str, excel_filename: str) -> None:
+        """Helper function to avoid repetitive evaluation of classification performance
+        of training, development and test set and their corresponding windows dicts.
+
+        Args:
+            windows (dict): Dictionary of labeled windows.
+            category (str): Name of category (Training, Development, Testing).
+            img_filename (str): Filename of .png file.
+            excel_filename (str): Filename of .xlsx file.
+        """
         if windows is not None:
             print(
                 f"[+] Computing classification performance on {category} set... ",
@@ -786,8 +895,7 @@ def evaluate_classification_performance(
             )
             confusion_matrix = classification_confusion_matrix(
                 windows,
-                small_test=small_test,
-                max_test_number=max_test_number,
+                max_test_number,
             )
             print("Done")
             plot_confusion_matrix(
@@ -795,16 +903,17 @@ def evaluate_classification_performance(
                 classes,
                 title=f"K = {K}",
                 distinguishable_title=img_filename,
-                savefig=savefig,
-                showfig=plot,
+                savefig=save_png,
+                showfig=plot_fig,
             )
-            print(" > Exporting to excel... ", end="")
-            matrix_to_excel(
-                confusion_matrix,
-                classes.tolist(),
-                sheetname=f"K = {K}",
-                filename=excel_filename,
-            )
+            if save_xlsx:
+                print(" > Exporting to excel... ", end="")
+                matrix_to_excel(
+                    confusion_matrix,
+                    classes.tolist(),
+                    sheetname=f"K = {K}",
+                    filename=excel_filename,
+                )
             print("Done")
 
     print("\n[*] CLASSIFICATION PERFORMANCE:\n")
@@ -816,15 +925,29 @@ def evaluate_classification_performance(
 
 
 def segmentation_confusion_matrix(
-    classes,
-    windows_per_name,
-    src: str = "",
-    small_test: bool = False,
-    max_test_number: int = 3,
+    classes: np.ndarray,
+    windows_per_name: dict,
+    src: str = PATH_LABELED,
+    max_test_number: int = -1,
 ) -> np.ndarray:
-    if src == "":
-        src = PATH_LABELED
+    """Obtains the confusion matrix for segmentation. Essentially, this method compares
+    the segmentation of images in training, development or test set with the provided
+    ground-truth.
 
+    Args:
+        classes (np.ndarray): Array of labels/classes.
+        windows_per_name (dict): Dictionary of labeled windows, where keys are names of
+                                 images and values are their respective windows.    
+        src (str, optional): Source of images to segment and compare. Defaults to 
+                             PATH_LABELED.
+        max_test_number (int, optional): Maximum number of labeled windows to take into
+                                         account for evaluating classification
+                                         performance. If set to -1, all labeled windows
+                                         are taken. Defaults to -1.
+
+    Returns:
+        np.ndarray: Segmentation confusion matrix.
+    """
     C = len(classes)
     shuffled_windows_per_name = list(windows_per_name.keys())
     shuffle(shuffled_windows_per_name)
@@ -850,25 +973,39 @@ def segmentation_confusion_matrix(
                 matrix[i, j] = count
         print("Done")
 
-        if small_test and k == max_test_number:
+        if k == max_test_number:
             break
 
     return matrix / matrix.sum(axis=1, keepdims=True)
 
 
 def evaluate_segmentation_performance(
-    classes,
-    K,
-    plot: bool = True,
-    savefig: bool = True,
-    small_test: bool = False,
-    max_test_number: int = 3,
+    classes: np.ndarray,
+    K: int,
+    plot_fig: bool = True,
+    save_png: bool = True,
+    save_xlsx: bool = True,
+    max_test_number: int = -1
 ) -> None:
+    """Evaluates the model's segmentation performance by creating the corresponding 
+    segmentation confusion matrices for training, development and test set (if they 
+    are requested) and provides the option to plot them, save them as a .png and 
+    .xlsx file.
+
+    Args:
+        classes (np.ndarray): Array of labels/classes.
+        K (int): K-Means algorithm parameter.
+        plot_fig (bool, optional): Specifies whether to plot the generated figures. 
+                                   Defaults to True.
+        save_png (bool, optional): Specifies whether to save the generated figures to
+                                   the filesystem as .png files. Defaults to True.
+        save_xlsx (bool, optional): Specifies whether to save the generated figures to
+                                    the filesystem as a .xlsx file. Defaults to True.
+        max_test_number (int, optional): [description]. Defaults to -1.
+    """
     print("\n[*] SEGMENTATION PERFORMANCE:")
     print("\n[+] Computing segmentation performance... ")
-    confusion_matrix = segmentation_confusion_matrix(
-        small_test=small_test, max_test_number=max_test_number
-    )
+    confusion_matrix = segmentation_confusion_matrix(classes, windows_per_name, max_test_number=max_test_number)
     print("Done")
     filename = f"(segmentation) K={K}"
     plot_confusion_matrix(
@@ -876,15 +1013,16 @@ def evaluate_segmentation_performance(
         classes,
         title=f"K = {K}",
         distinguishable_title=filename,
-        savefig=savefig,
-        showfig=plot,
+        savefig=save_png,
+        showfig=plot_fig,
         format_percentage=True,
     )
-    print(" > Exporting to excel... ", end="")
-    matrix_to_excel(
-        confusion_matrix,
-        classes.tolist(),
-        sheetname=f"K = {K}",
-        filename="Segmentation",
-    )
-    print("Done")
+    if save_xlsx:
+        print(" > Exporting to excel... ", end="")
+        matrix_to_excel(
+            confusion_matrix,
+            classes.tolist(),
+            sheetname=f"K = {K}",
+            filename="Segmentation",
+        )
+        print("Done")
