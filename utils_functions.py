@@ -27,7 +27,8 @@ def train_dev_test_split(
 
     Args:
         data (dict): Complete dataset as a dictionary whose keys are labels and values are the
-                     corresponding annotated image windows as numpy arrays.
+                     corresponding annotated image windows as numpy arrays. Values are of the
+                     form (filename, window).
         train_size (float): Percentage of the dataset that will be used as training set.
         dev_size (float): Percentage of the dataset that will be used as development set.
 
@@ -38,25 +39,50 @@ def train_dev_test_split(
     if train_size + dev_size > 1:
         raise ValueError("Invalid train and/or dev ratios.")
 
-    train = {}
-    dev = {}
-    test = {}
+    # Extract unique names in values of data
+    filenames = []
+    for (filename, _) in data.values():
+        if filename not in filenames:
+            filenames.append(filename)
 
-    # Randomize values of dictionary.
-    for label in data:
-        random.shuffle(data[label])
+    filenames.sort()  # make sure that the filenames have a fixed order before shuffling
+    random.seed(230)  # make sure the same split is obtained every time the code is run
+    random.shuffle(filenames)
 
-    # Split values in 3 dictionaries.
-    for label in data:
-        train_split = int(len(data[label]) * train_size)
-        dev_split = train_split + int(len(data[label]) * dev_size)
-        train[label], dev[label] = (
-            data[label][:train_split],
-            data[label][train_split : dev_split + 1],
-        )
-        test[label] = data[label][dev_split + 1 :]
+    split_1 = int(0.7 * len(filenames))
+    split_2 = int(0.9 * len(filenames))
+    train_filenames = filenames[:split_1]
+    dev_filenames = filenames[split_1:split_2]
+    test_filenames = filenames[split_2:]
 
-    return train, dev, test
+    train_windows = {}
+    dev_windows = {}
+    test_windows = {}
+
+    for label, (filename, window) in data:
+        if filename in train_filenames:
+            if label not in train_windows:
+                train_windows[label] = []
+            train_windows[label].append(window)
+        elif filename in dev_filenames:
+            if label not in train_windows:
+                dev_windows[label] = []
+            dev_windows[label].append(window)
+        elif filename in test_filenames:
+            if label not in train_windows:
+                test_windows[label] = []
+            test_windows[label].append(window)
+        else:
+            raise Exception(f"{filename} is not in split")
+
+    return (
+        train_filenames,
+        dev_filenames,
+        test_filenames,
+        train_windows,
+        dev_windows,
+        test_windows,
+    )
 
 
 def rgb2gray(rgb: np.ndarray) -> np.ndarray:
@@ -358,6 +384,25 @@ def fullprint(*args, **kwargs) -> None:
     np.set_printoptions(threshold=np.inf)
     pprint(*args, **kwargs)
     np.set_printoptions(**opt)
+
+
+def nested_dicts_to_matrix(dictionary: dict) -> np.ndarray:
+    """Builds a matrix out of a nested dictionary.
+    Example:
+    >> d = {0: {0: 3, 1: 4}, 1: {0: 0, 1: 5}}
+    >> nested_dicts_to_matrix(d) -> [[3, 4], [0, 5]]
+
+    Args:
+        dictionary (dict): Nested dictionary.
+
+    Returns:
+        np.ndarray: Equivalent matrix.
+    """
+    matrix = []
+    for row in dictionary.values():
+        matrix.append(list(row.values()))
+
+    return np.asarray(matrix)
 
 
 def formatter(format_str, widths, *columns):
