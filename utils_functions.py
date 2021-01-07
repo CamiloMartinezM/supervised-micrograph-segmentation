@@ -41,8 +41,8 @@ def train_dev_test_split(
 
     # Extract unique names in values of data
     filenames = []
-    for label in data.values():
-        for filename, _ in label:
+    for l in data.values():
+        for (filename, _) in l:
             if filename not in filenames:
                 filenames.append(filename)
 
@@ -61,7 +61,7 @@ def train_dev_test_split(
     test_windows = {}
 
     for label, windows_list in data.items():
-        for filename, window in windows_list:
+        for (filename, window) in windows_list:
             if filename in train_filenames:
                 if label not in train_windows:
                     train_windows[label] = []
@@ -159,7 +159,7 @@ def create_folder(name: str) -> None:
         os.mkdir(name)
 
 
-def find_path_of_img(name: str, src: str) -> str:
+def find_path_of_img(name: str, src: str, relative_path: bool = False) -> str:
     """Finds the path of an image given its name.
 
     Args:
@@ -172,7 +172,12 @@ def find_path_of_img(name: str, src: str) -> str:
     for root, _, files in os.walk(src):
         for filename in files:
             if filename == name:
-                return os.path.abspath(os.path.join(root, filename))
+                if relative_path:
+                    return os.path.join(
+                        src, os.path.relpath(os.path.join(root, filename), start=src)
+                    )
+                else:
+                    return os.path.join(root, filename)
     return None
 
 
