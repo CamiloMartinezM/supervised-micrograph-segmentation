@@ -16,6 +16,7 @@ from utils_functions import (
 print(f"\nPath to labeled micrographs: {model.PATH_LABELED}")
 print(f"Path to preprocessed micrographs: {model.PATH_PREPROCESSED}")
 
+# %%
 """Preprocesamiento
 
 En primer lugar, se optó por utilizar una variante de la ecualización de histograma 
@@ -47,6 +48,7 @@ final_img = load_img(find_path_of_img("cs0327.png", model.PATH_LABELED))
 # Comparison examples
 compare2imgs(comparison_img, final_img, title_2="CLAHE")
 
+# %%
 """Carga de las imágenes
 
 Las imágenes son cargadas en un arreglo de numpy que tiene todas las imágenes, llamado 
@@ -58,9 +60,11 @@ debería ser en realidad name_to_index), cuyas llaves son los nombres de las im�
 """
 micrographs, index_to_name = model.load_imgs(exclude=["Low carbon"])
 
+# %%
 """Carga de las escalas"""
 micrographs_scales = model.load_scales()
 
+# %%
 """Textones
 
 Banco de filtros
@@ -85,6 +89,7 @@ pero solo 8 respuestas de filtro.
 """
 model.filterbank_example()
 
+# %%
 """Extracción de las ventanas/regiones anotadas
 
 Dentro de PATH_LABELED, cada una de las imágenes tiene asociada un archivo .txt que 
@@ -95,6 +100,7 @@ labels, windows, windows_per_name = model.extract_labeled_windows(
     micrographs, index_to_name, exclude=["Low carbon"]
 )
 
+# %%
 """Train/dev/test split
 
 Estas imágenes fueron subdividas en conjuntos de datos para entrenamiento, validación y 
@@ -122,6 +128,7 @@ dicha clase o que sí se entrene, pero no sea validado o probado.
 # to the phases or morphologies of interest in the micrographs.
 train_dev_test_split_table(windows_train, windows_dev, windows_test)
 
+# %%
 """Entrenamiento del modelo
 
 A continuación, se muestra una función que entrena el modelo, primero construyendo la 
@@ -129,16 +136,22 @@ matriz de *feature vectors* para cada una de las clases, y luego haciendo un
 *clustering* que aprenda los textones asociados a cada una de ellas.
 """
 K = 100
-feature_vectors_of_label, classes, T, _ = model.train(K, windows_train)
+feature_vectors_of_label, classes, T, _ = model.train(K, windows_train, minibatch_size=1000)
 
-
+# %%
 """Carga de las imágenes ground truth.
 
 Las imágenes segmentadas (ground truth) se guardan en un diccionario cuyas llaves son los
 nombres de las imágenes y los valores son las respectivas segmentaciones.
 """
-ground_truth = model.load_ground_truth("(Segmented)HypoeutectoidSteel.tif", classes)
+ground_truth = model.load_ground_truth(
+    "(Segmented)HypoeutectoidStack.tif", classes, "Hypoeutectoid steel"
+)
 
+# %%
+model.plot_image_with_ground_truth("as0013.png", ground_truth, alpha=0.6)
+
+# %%
 """Segmentación
 
 En primer lugar, se obtienen los superpíxeles de la imagen de prueba, al igual que los 
@@ -152,35 +165,38 @@ y los valores a la clase a la que dicho superpíxel pertenece. El fundamento mat
 está basado en una decisión de clasificación colectiva de cada superpíxel basada en las
 ocurrencias de los textones más cercanos de todos los píxeles en el superpíxel.
 """
+
+
+# %%
+"""Evaluación de rendimiento"""
+model.evaluate_classification_performance(
+    K, classes, T, windows_train, windows_dev, windows_test, plot_fig=False,
+)
+
+# %%
+model.evaluate_segmentation_performance(
+    test_set,
+    ground_truth,
+    classes,
+    K,
+    T,
+    1000,
+    5,
+    0.17,
+    False,
+)
+
+# %%
 original_img, superpixels, segmentation = model.segment(
     find_path_of_img("cs0327.png", model.PATH_LABELED),
     classes,
     T,
-    n_segments=500,
+    n=500,
     compactness=0.17,
+    sigma=5,
     plot_original=True,
     plot_superpixels=True,
     verbose=True,
 )
 
-"""Evaluación de rendimiento"""
-model.evaluate_classification_performance(
-    K,
-    classes,
-    windows_train,
-    windows_dev,
-    windows_test,
-    plot_fig=False,
-)
-
-model.evaluate_segmentation_performance(
-    training_set,
-    ground_truth,
-    classes,
-    K,
-    n=1000,
-    sigma=5,
-    compactness=0.17,
-    plot_fig=False,
-)
 model.visualize_segmentation(original_img, classes, superpixels, segmentation)

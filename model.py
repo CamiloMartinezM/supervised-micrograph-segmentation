@@ -127,7 +127,7 @@ def preprocess_with_clahe(src: str) -> None:
         'already_preprocessed.txt'.
         """
         try:
-            with open(check_file, "w") as f:
+            with open(os.path.join(src, check_file), "w") as f:
                 f.write("Already preprocessed.")
             print(f"[+] Directory {src} succesfully marked as preprocessed.")
         except:
@@ -151,6 +151,8 @@ def preprocess_with_clahe(src: str) -> None:
                         print("Failed. Got None as folder.")
         print("[+] Finished preprocessing.")
         mark_as_preprocessed()
+    else:
+        print(f"[+] Directory {src} has been previously preprocessed.")
 
 
 def get_array_of_micrograph(
@@ -290,16 +292,14 @@ def extract_labeled_windows(
 
                                 if label not in windows_per_label:
                                     windows_per_label[label] = []
-                                windows_per_label[label].append(window)
+                                windows_per_label[label].append((img_name, window))
                             # print("Done")
                             line = annotations.readline()
 
                     print("Done")
 
     print_table_from_dict(
-        labels,
-        cols=["Label", "Number"],
-        title="Number of windows per label",
+        labels, cols=["Label", "Number"], title="Number of windows per label",
     )
 
     return labels, windows_per_label, windows_per_name
@@ -552,8 +552,8 @@ def train(
     for label in feature_vectors_of_label:
         print(f"[?] Computing K-means on feature vector of label: {label}... ")
         if minibatch_size is not None:
-            textons[label] = MiniBatchKMeans(n_clusters=K, output_type="numpy").fit(
-                np2cudf(feature_vectors_of_label[label])
+            textons[label] = MiniBatchKMeans(n_clusters=K).fit(
+                feature_vectors_of_label[label]
             )
         else:
             textons[label] = CumlKMeans(n_clusters=K, output_type="numpy").fit(
@@ -638,8 +638,7 @@ def predict_class_of(
 
     # Matrix which correlates texture texton distances and minimum distances of every pixel.
     A = np.sum(
-        np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09),
-        axis=-1,
+        np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09), axis=-1,
     )
     A_i = A.sum(axis=1)  # Sum over rows (i.e, over all pixels).
     ci = A_i.argmax(axis=0)  # Class with maximum probability of occurrence is chosen.
@@ -856,7 +855,7 @@ def segmentation_to_class_matrix(
 
 
 def classification_confusion_matrix(
-    classes: np.ndarray, windows: dict, max_test_number: int = -1
+    classes: np.ndarray, T: np.ndarray, windows: dict, max_test_number: int = -1
 ) -> np.ndarray:
     """Obtains the confusion matrix for classification. Essentially, this confusion
     matrix evaluates how good the model classifies each labeled window. In other words,
@@ -866,6 +865,7 @@ def classification_confusion_matrix(
 
     Args:
         classes (np.ndarray): Array of classes/labels.
+        T (np.ndarray): Texton matrix.
         windows (dict): Dictionary of labeled windows. These labeled windows are
                         classified by the model and the result is tested against the
                         known label.
@@ -884,11 +884,10 @@ def classification_confusion_matrix(
             current_feature_vectors, _ = get_feature_vector_of_window(
                 window, ravel=True
             )
-            predicted_class = predict_class_of(current_feature_vectors)
+            predicted_class = predict_class_of(current_feature_vectors, classes, T)
             predicted_class_index = np.where(classes == predicted_class)[0][0]
             y_pred.append(predicted_class_index)
-
-        y_true.append(i)
+            y_true.append(i)
         if i == max_test_number:
             break
 
@@ -900,12 +899,14 @@ def classification_confusion_matrix(
 def evaluate_classification_performance(
     K: int,
     classes: np.ndarray,
+    T: np.ndarray,
     windows_train: dict = None,
     windows_dev: dict = None,
     windows_test: dict = None,
     plot_fig: bool = True,
     save_png: bool = True,
     save_xlsx: bool = True,
+    format_percentage: bool = True,
     max_test_number: int = -1,
 ) -> None:
     """Evaluates the model's classification performance by creating the corresponding
@@ -916,6 +917,7 @@ def evaluate_classification_performance(
     Args:
         K (int): K-Means algorithm parameter.
         classes (np.ndarray): Array of classes/labels.
+        T (np.ndarray): Texton matrix.
         windows_train (dict, optional): Training set. Defaults to None.
         windows_dev (dict, optional): Development set. Defaults to None.
         windows_test (dict, optional): Test set. Defaults to None.
@@ -925,6 +927,8 @@ def evaluate_classification_performance(
                                    the filesystem as .png files. Defaults to True.
         save_xlsx (bool, optional): Specifies whether to save the generated figures to
                                     the filesystem as a .xlsx file. Defaults to True.
+        format_percentage (bool, optional): True if numbers as percentages are desired. 
+                                            Defaults to False.
         max_test_number (int, optional): Maximum number of labeled windows to take into
                                          account for evaluating classification
                                          performance. If set to -1, all labeled windows
@@ -949,8 +953,7 @@ def evaluate_classification_performance(
                 end="",
             )
             _, confusion_matrix = classification_confusion_matrix(
-                windows,
-                max_test_number,
+                classes, T, windows, max_test_number,
             )
             print("Done")
             plot_confusion_matrix(
@@ -960,6 +963,7 @@ def evaluate_classification_performance(
                 distinguishable_title=img_filename,
                 savefig=save_png,
                 showfig=plot_fig,
+                format_percentage=format_percentage,
             )
             if save_xlsx:
                 print(" > Exporting to excel... ", end="")
@@ -979,7 +983,7 @@ def evaluate_classification_performance(
     helper(windows_test, "Testing", f"Test, {constant_title}", "Test")
 
 
-def load_ground_truth(tif_file: str, classes: np.narray) -> dict:
+def load_ground_truth(tif_file: str, classes: np.ndarray, folder: str) -> dict:
     """Obtains a dictionary of ground truth images, where keys are names of images
     and values are the corresponding ground truth images. This is the ground truth
     for segmentation.
@@ -989,17 +993,24 @@ def load_ground_truth(tif_file: str, classes: np.narray) -> dict:
                         this file does not have labels for each image, the
                         alphabetical order of files in PATH_LABELED is used.
         classes (np.ndarray): Array of labels/classes.
+        folder (str): Specifies the folder inside PATH_LABELED where the alphabetical
+                      order of the images matches the ground truth images'.
 
     Returns:
         dict: Dictionary of ground truth images.
     """
-    ground_truth_imgs = io.imread(tif_file)[:, 0, :, :]
+    ground_truth_imgs = io.imread(os.path.join(PATH_LABELED, tif_file))[:, 0, :, :]
+    ground_truth = np.zeros(ground_truth_imgs.shape, dtype=int)
     for i in range(ground_truth_imgs.shape[0]):
-        ground_truth_img = ground_truth_imgs[i, :, :]
-        ground_truth_imgs[i, :, :] = make_classes_consistent(ground_truth_img, classes)
+        ground_truth_img = ground_truth_imgs[i, :, :].astype(int)
+        ground_truth[i, :, :] = make_classes_consistent(ground_truth_img, classes)
 
-    l = [f for f in os.listdir(PATH_LABELED) if f.endswith(".png")]
-    return dict(zip(l, ground_truth_imgs))
+    l = [
+        f
+        for f in sorted(os.listdir(os.path.join(PATH_LABELED, folder)))
+        if f.endswith(".png")
+    ]
+    return dict(zip(l, ground_truth))
 
 
 def make_classes_consistent(
@@ -1041,7 +1052,7 @@ def make_classes_consistent(
             for i in range(ground_truth_img.min(), ground_truth_img.max() + 1)
         ]
     )
-    return indexer[(ground_truth_img - ground_truth_img.min())]
+    return indexer[(ground_truth_img - ground_truth_img.min())].astype(int)
 
 
 def plot_image_with_ground_truth(
@@ -1101,25 +1112,38 @@ def segmentation_confusion_matrix(
     Returns:
         np.ndarray: Segmentation confusion matrix.
     """
-    C = len(classes)
-    matrix = np.zeros((C, C))
+    y_pred = None
+    y_true = None
     for k, name in enumerate(imgs):
         print(f"\t[?] Segmenting {name}... ", end="")
         original_img, superpixels, segmented_img = segment(
             find_path_of_img(name, src=src), classes, T, n, sigma, compactness
         )
-        y_pred = segmentation_to_class_matrix(
-            superpixels, segmented_img, original_img.shape, as_int=True
+        current_y_pred = segmentation_to_class_matrix(
+            classes, superpixels, segmented_img, original_img.shape, as_int=True
         ).ravel()
+
+        if y_pred is None:
+            y_pred = current_y_pred
+        else:
+            y_pred = np.concatenate((y_pred, current_y_pred))
+
         print("Done")
-        print("\t    > Evaluating results... ", end="")
-        y_true = ground_truth[name].ravel()
-        matrix += ConfusionMatrix(y_true, y_pred, transpose=True).to_array()
+
+        current_y_true = ground_truth[name].ravel()
+        if y_true is None:
+            y_true = current_y_true
+        else:
+            y_true = np.concatenate((y_true, current_y_true))
+
+        print(ConfusionMatrix(y_true, y_pred, transpose=True).to_array())
 
         if k == max_test_number:
             break
 
-    return matrix
+    matrix = ConfusionMatrix(y_true, y_pred, transpose=True)
+
+    return matrix, matrix.to_array()
 
 
 def evaluate_segmentation_performance(
@@ -1127,6 +1151,7 @@ def evaluate_segmentation_performance(
     ground_truth: dict,
     classes: np.ndarray,
     K: int,
+    T: np.ndarray,
     n: int,
     sigma: float,
     compactness: float,
@@ -1146,6 +1171,7 @@ def evaluate_segmentation_performance(
         ground_truth (dict): Dictionary of ground truth images.
         classes (np.ndarray): Array of labels/classes.
         K (int): K-Means algorithm parameter.
+        T (np.ndarray): Texton matrix.
         n (int): Maximum number of superpixels to generate.
         sigma (int): SLIC algorithm parameter.
         compactness (int): SLIC algorithm parameter.
@@ -1159,15 +1185,17 @@ def evaluate_segmentation_performance(
     """
     print("\n[*] SEGMENTATION PERFORMANCE:")
     print("\n[+] Computing segmentation performance... ")
-    confusion_matrix = segmentation_confusion_matrix(
-        classes,
+    _, confusion_matrix = segmentation_confusion_matrix(
         imgs,
         ground_truth,
+        classes,
+        T,
         n,
         compactness,
         sigma,
         max_test_number=max_test_number,
     )
+    print(confusion_matrix)
     print("Done")
     filename = f"(segmentation) K={K}"
     plot_confusion_matrix(

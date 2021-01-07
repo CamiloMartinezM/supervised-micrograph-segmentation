@@ -41,9 +41,10 @@ def train_dev_test_split(
 
     # Extract unique names in values of data
     filenames = []
-    for (filename, _) in data.values():
-        if filename not in filenames:
-            filenames.append(filename)
+    for label in data.values():
+        for filename, _ in label:
+            if filename not in filenames:
+                filenames.append(filename)
 
     filenames.sort()  # make sure that the filenames have a fixed order before shuffling
     random.seed(230)  # make sure the same split is obtained every time the code is run
@@ -59,21 +60,22 @@ def train_dev_test_split(
     dev_windows = {}
     test_windows = {}
 
-    for label, (filename, window) in data:
-        if filename in train_filenames:
-            if label not in train_windows:
-                train_windows[label] = []
-            train_windows[label].append(window)
-        elif filename in dev_filenames:
-            if label not in train_windows:
-                dev_windows[label] = []
-            dev_windows[label].append(window)
-        elif filename in test_filenames:
-            if label not in train_windows:
-                test_windows[label] = []
-            test_windows[label].append(window)
-        else:
-            raise Exception(f"{filename} is not in split")
+    for label, windows_list in data.items():
+        for filename, window in windows_list:
+            if filename in train_filenames:
+                if label not in train_windows:
+                    train_windows[label] = []
+                train_windows[label].append(window)
+            elif filename in dev_filenames:
+                if label not in dev_windows:
+                    dev_windows[label] = []
+                dev_windows[label].append(window)
+            elif filename in test_filenames:
+                if label not in test_windows:
+                    test_windows[label] = []
+                test_windows[label].append(window)
+            else:
+                raise Exception(f"{filename} is not in split")
 
     return (
         train_filenames,
@@ -135,7 +137,12 @@ def get_folder(path: str) -> str:
     Returns:
         str: "High carbon", "Medium carbon" or "Low carbon".
     """
-    possible_folders = ["High carbon", "Medium carbon", "Low carbon"]
+    possible_folders = [
+        "High carbon",
+        "Medium carbon",
+        "Hypoeutectoid steel",
+        "Low carbon",
+    ]
     for possible_folder in possible_folders:
         if possible_folder in path:
             return possible_folder
@@ -186,25 +193,13 @@ def print_table_from_dict(data: dict, cols: list, title: str = "") -> None:
     characteristic_value = list(data.values())[0]
 
     if type(characteristic_value) is np.ndarray:
-        for label in sorted(
-            data.keys(),
-            key=lambda x: data[x].shape[0],
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: data[x].shape[0], reverse=True,):
             table.add_row([label, f"{data[label].shape}"])
     elif type(characteristic_value) is list:
-        for label in sorted(
-            data.keys(),
-            key=lambda x: len(data[x]),
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: len(data[x]), reverse=True,):
             table.add_row([label, f"{len(data[label])}"])
     else:  # int
-        for label in sorted(
-            data.keys(),
-            key=lambda x: data[x],
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: data[x], reverse=True,):
             table.add_row([label, f"{data[label]}"])
 
     print(table.get_string(title=title))
@@ -241,55 +236,63 @@ def train_dev_test_split_table(train: dict, dev: dict, test: dict) -> None:
 
 
 def plot_confusion_matrix(
-    cm: np.ndarray,
+    matrix: np.ndarray,
     target_names: list,
     title: str = "Confusion matrix",
     distinguishable_title: str = None,
-    cmap=plt.cm.Blues,
+    cmap=plt.cm.OrRd,
     dpi: int = 120,
     figsize: tuple = (12, 8),
     savefig: bool = True,
     showfig: bool = True,
-    format_percentage: bool = False,
+    format_percentage: bool = True,
 ) -> None:
     """Plots a visual representation of a confusion matrix.
     Original: https://stackoverflow.com/questions/35585069/python-tabulating-confusion-matrix
-
     Args:
-        matrix (np.ndarray): Confusion matrix where rows are true classes and columns are predicted
-                             classes.
+        matrix (np.ndarray): Confusion matrix where rows are true classes and columns 
+                             are predicted classes.
         target_names (list): Names of classes.
         title (str, optional): Title of plot. Defaults to "Confusion matrix".
-        distinguishable_title (str, optional): Distinguishable title to add to the name of the file
-                                               to which the plot would be saved. Defaults to None.
-        cmap (TYPE, optional): Colormap to use. Defaults to plt.cm.Blues.
-        dpi (int, optional): DPI of plot. Defaults to 100.
-        figsize (tuple, optional): Figure size. Defaults to (10, 8).
-        savefig (bool, optional): Specifies whether to save the figure in the current directory or
-                                  not. Defaults to True.
-        showfig (bool, optional): Specifies whether to show the figure or not. Defaults to True.
-        format_percentage (bool, optional): True if numbers as percentages are desired. Defaults to
-                                            False.
+        distinguishable_title (str, optional): Distinguishable title to add to the name 
+                                                of the file to which the plot would be 
+                                                saved. Defaults to None.
+        cmap (TYPE, optional): Colormap to use. Defaults to plt.cm.OrRd.
+        dpi (int, optional): DPI of plot. Defaults to 120.
+        figsize (tuple, optional): Figure size. Defaults to (12, 8).
+        savefig (bool, optional): Specifies whether to save the figure in the current 
+                                    directory or not. Defaults to True.
+        showfig (bool, optional): Specifies whether to show the figure or not. Defaults
+                                    to True.
+        format_percentage (bool, optional): True if numbers as percentages are desired. 
+                                            Defaults to False.
     """
     plt.figure(figsize=figsize)
-    plt.imshow(cm, interpolation="nearest", cmap=cmap)
+    plt.imshow(matrix, interpolation="nearest", cmap=cmap)
     plt.title(title)
     plt.colorbar()
     tick_marks = np.arange(len(target_names))
     plt.xticks(tick_marks, target_names, rotation=45)
     plt.yticks(tick_marks, target_names)
-    plt.tight_layout()
+    plt.tight_layout(pad=2)
 
-    width, height = cm.shape
+    width, height = matrix.shape
+
+    if format_percentage:
+        matrix = matrix / matrix.sum(axis=1, keepdims=True)
+        format_str = "{0:.1%}"
+    else:
+        format_str = "{}"
 
     for x in range(width):
         for y in range(height):
             plt.annotate(
-                str("{0:.1%}".format(cm[x][y])),
+                str(format_str.format(matrix[x][y])),
                 xy=(y, x),
                 horizontalalignment="center",
                 verticalalignment="center",
             )
+
     plt.ylabel("True class")
     plt.xlabel("Predicted class")
 
@@ -302,6 +305,7 @@ def plot_confusion_matrix(
             plt.savefig("Confusion matrix.png", dpi=dpi)
 
     plt.close()
+
 
 
 def matrix_to_excel(
