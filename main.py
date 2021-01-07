@@ -5,6 +5,7 @@ Created on Thu Nov 12 08:42:22 2020
 @author: Camilo Martínez
 """
 import model
+import os
 from utils_functions import (
     compare2imgs,
     find_path_of_img,
@@ -62,7 +63,7 @@ micrographs, index_to_name = model.load_imgs(exclude=["Low carbon"])
 
 # %%
 """Carga de las escalas"""
-micrographs_scales = model.load_scales()
+# micrographs_scales = model.load_scales()
 
 # %%
 """Textones
@@ -87,7 +88,7 @@ de 38 (6 orientaciones a 3 escalas para 2 filtros orientados, más 2 isotrópico
 (3 escalas para 2 filtros, más 2 isotrópicos). Por ello, el MR8 consta de 38 filtros, 
 pero solo 8 respuestas de filtro.
 """
-model.filterbank_example()
+# model.filterbank_example()
 
 # %%
 """Extracción de las ventanas/regiones anotadas
@@ -144,9 +145,7 @@ feature_vectors_of_label, classes, T, _ = model.train(K, windows_train, minibatc
 Las imágenes segmentadas (ground truth) se guardan en un diccionario cuyas llaves son los
 nombres de las imágenes y los valores son las respectivas segmentaciones.
 """
-ground_truth = model.load_ground_truth(
-    "(Segmented)HypoeutectoidStack.tif", classes, "Hypoeutectoid steel"
-)
+ground_truth = model.load_ground_truth(os.path.join(model.PATH_LABELED, "(Segmented)HypoeutectoidStack.tif"), classes)
 
 # %%
 model.plot_image_with_ground_truth("as0013.png", ground_truth, alpha=0.6)
@@ -165,7 +164,19 @@ y los valores a la clase a la que dicho superpíxel pertenece. El fundamento mat
 está basado en una decisión de clasificación colectiva de cada superpíxel basada en las
 ocurrencias de los textones más cercanos de todos los píxeles en el superpíxel.
 """
+original_img, superpixels, segmentation = model.segment(
+    find_path_of_img("cs0327.png", model.PATH_LABELED),
+    classes,
+    T,
+    n=500,
+    compactness=0.17,
+    sigma=5,
+    plot_original=True,
+    plot_superpixels=True,
+    verbose=True,
+)
 
+model.visualize_segmentation(original_img, classes, superpixels, segmentation)
 
 # %%
 """Evaluación de rendimiento"""
@@ -185,18 +196,3 @@ model.evaluate_segmentation_performance(
     0.17,
     False,
 )
-
-# %%
-original_img, superpixels, segmentation = model.segment(
-    find_path_of_img("cs0327.png", model.PATH_LABELED),
-    classes,
-    T,
-    n=500,
-    compactness=0.17,
-    sigma=5,
-    plot_original=True,
-    plot_superpixels=True,
-    verbose=True,
-)
-
-model.visualize_segmentation(original_img, classes, superpixels, segmentation)

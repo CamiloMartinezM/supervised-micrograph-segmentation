@@ -7,9 +7,8 @@ Created on Wed Nov 11 16:59:47 2020
 import os
 import warnings
 from collections import Counter
+from random import randint
 from itertools import chain
-from random import randint, shuffle
-
 import cv2
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -31,13 +30,12 @@ from utils_functions import (
     get_folder,
     load_img,
     matrix_to_excel,
-    nested_dicts_to_matrix,
     np2cudf,
     plot_confusion_matrix,
     print_table_from_dict,
 )
 
-src = os.getcwd()
+src = ""
 
 labeled = "Anotadas"
 preprocessed = "Preprocesadas"
@@ -142,8 +140,8 @@ def preprocess_with_clahe(src: str) -> None:
                     print("[+] Preprocessing " + str(f) + "... ", end="")
                     folder = get_folder(path)
                     if folder is not None:
-                        original_path = find_path_of_img(f, src)
-                        img = cv2.imread(original_path, 0)
+                        original_path = find_path_of_img(f, src, relative_path=True)
+                        img = cv2.imread(r"" + original_path, 0)
                         final_img = clahe.apply(img)
                         cv2.imwrite(original_path, final_img)
                         print("Done")
@@ -151,8 +149,6 @@ def preprocess_with_clahe(src: str) -> None:
                         print("Failed. Got None as folder.")
         print("[+] Finished preprocessing.")
         mark_as_preprocessed()
-    else:
-        print(f"[+] Directory {src} has been previously preprocessed.")
 
 
 def get_array_of_micrograph(
@@ -526,8 +522,6 @@ def train(
         feature_vectors_of_label = precomputed_feature_vectors
     else:
         if windows_dev is not None:
-            from itertools import chain
-
             windows_to_train_on = {}
             for k, v in chain(windows_train.items(), windows_dev.items()):
                 windows_to_train_on.setdefault(k, []).extend(v)
@@ -983,7 +977,7 @@ def evaluate_classification_performance(
     helper(windows_test, "Testing", f"Test, {constant_title}", "Test")
 
 
-def load_ground_truth(tif_file: str, classes: np.ndarray, folder: str) -> dict:
+def load_ground_truth(tif_file: str, classes: np.ndarray, folder: str = "Hypoeutectoid steel") -> dict:
     """Obtains a dictionary of ground truth images, where keys are names of images
     and values are the corresponding ground truth images. This is the ground truth
     for segmentation.
@@ -999,7 +993,7 @@ def load_ground_truth(tif_file: str, classes: np.ndarray, folder: str) -> dict:
     Returns:
         dict: Dictionary of ground truth images.
     """
-    ground_truth_imgs = io.imread(os.path.join(PATH_LABELED, tif_file))[:, 0, :, :]
+    ground_truth_imgs = io.imread(tif_file)[:, 0, :, :]
     ground_truth = np.zeros(ground_truth_imgs.shape, dtype=int)
     for i in range(ground_truth_imgs.shape[0]):
         ground_truth_img = ground_truth_imgs[i, :, :].astype(int)
@@ -1112,36 +1106,27 @@ def segmentation_confusion_matrix(
     Returns:
         np.ndarray: Segmentation confusion matrix.
     """
-    y_pred = None
-    y_true = None
+    matrix = None
     for k, name in enumerate(imgs):
         print(f"\t[?] Segmenting {name}... ", end="")
         original_img, superpixels, segmented_img = segment(
             find_path_of_img(name, src=src), classes, T, n, sigma, compactness
         )
-        current_y_pred = segmentation_to_class_matrix(
+        y_pred = segmentation_to_class_matrix(
             classes, superpixels, segmented_img, original_img.shape, as_int=True
         ).ravel()
 
-        if y_pred is None:
-            y_pred = current_y_pred
-        else:
-            y_pred = np.concatenate((y_pred, current_y_pred))
-
         print("Done")
 
-        current_y_true = ground_truth[name].ravel()
-        if y_true is None:
-            y_true = current_y_true
+        y_true = ground_truth[name].ravel()
+        
+        if matrix is None:
+            matrix = ConfusionMatrix(y_true, y_pred, transpose=True)
         else:
-            y_true = np.concatenate((y_true, current_y_true))
-
-        print(ConfusionMatrix(y_true, y_pred, transpose=True).to_array())
+            matrix = matrix.combine(ConfusionMatrix(y_true, y_pred, transpose=True))
 
         if k == max_test_number:
             break
-
-    matrix = ConfusionMatrix(y_true, y_pred, transpose=True)
 
     return matrix, matrix.to_array()
 
@@ -1195,7 +1180,6 @@ def evaluate_segmentation_performance(
         sigma,
         max_test_number=max_test_number,
     )
-    print(confusion_matrix)
     print("Done")
     filename = f"(segmentation) K={K}"
     plot_confusion_matrix(
