@@ -21,7 +21,7 @@ from skimage import io
 from skimage.segmentation import mark_boundaries
 from sklearn.cluster import MiniBatchKMeans
 
-from utils_classes import FilterBankMR8, Scaler, SLICSegmentation
+from utils_classes import FilterBank, Scaler, SuperpixelSegmentation
 
 warnings.simplefilter("ignore", category=NumbaWarning)
 
@@ -33,6 +33,7 @@ from utils_functions import (
     np2cudf,
     plot_confusion_matrix,
     print_table_from_dict,
+    statistics_from_matrix,
 )
 
 src = ""
@@ -301,14 +302,16 @@ def extract_labeled_windows(
     return labels, windows_per_label, windows_per_name
 
 
-def filterbank_example(img: str = "cs0328.png", dpi: int = 80) -> None:
+def filterbank_example(
+    img: str = "cs0328.png", dpi: int = 80, filterbank_name: str = "MR8"
+) -> None:
     """Plots an example of the chosen filterbank.
 
     Args:
         img (str, optional): Image to filter and show. Defaults to "cs0328.png".
         dpi (int, optional): DPI of plotted figure. Defaults to 80.
     """
-    MR8 = FilterBankMR8([1, 2, 4], 6)  # MR8 Filter bank
+    MR8 = FilterBank(name=filterbank_name)  # MR8 Filter bank
     print("Filters (RFS Filter Bank):")
     MR8.plot_filters()
 
@@ -355,7 +358,7 @@ def slice_by_corner_coords(
     return img[first_point[1] : second_point[1], first_point[0] : second_point[0]]
 
 
-def get_response_vector(img: np.ndarray) -> np.ndarray:
+def get_response_vector(img: np.ndarray, filterbank_name: str = "MR8") -> np.ndarray:
     """Convolves the input image with the MR8 Filter Bank to get its response as a numpy array.
 
     Args:
@@ -364,10 +367,10 @@ def get_response_vector(img: np.ndarray) -> np.ndarray:
     Returns:
         np.ndarray: Numpy array of shape (*img.shape, 8).
     """
-    MR8 = FilterBankMR8([1, 2, 4], 6)  # MR8 Filter bank
+    filterbank = FilterBank(name=filterbank_name)  # MR8 Filter bank
 
     # 8 responses from image
-    r = MR8.response(img)
+    r = filterbank.response(img)
 
     # Every response is stacked on top of the other in a single matrix whose last axis has
     # dimension 8. That means, there is now only one response image, in which each channel
@@ -375,7 +378,7 @@ def get_response_vector(img: np.ndarray) -> np.ndarray:
     response = np.concatenate(
         [np.expand_dims(r[i], axis=-1) for i in range(len(r))], axis=-1
     )
-    assert response.shape == (*r[0].shape, 8)
+    assert response.shape == (*r[0].shape, filterbank.n_filters)
     return response
 
 
@@ -402,7 +405,9 @@ def concatenate_responses(responses: np.ndarray) -> np.ndarray:
     )
 
 
-def get_feature_vector_of_window(window: np.ndarray, ravel: bool = False) -> tuple:
+def get_feature_vector_of_window(
+    window: np.ndarray, ravel: bool = False, filterbank_name: str = "MR8"
+) -> tuple:
     """Obtains the feature vectors of an image or window.
 
     Args:
@@ -415,7 +420,7 @@ def get_feature_vector_of_window(window: np.ndarray, ravel: bool = False) -> tup
         tuple: Feature vector of the given window and the number of pixels whose feature vector
                was calculated.
     """
-    response_img = get_response_vector(window)
+    response_img = get_response_vector(window, filterbank_name)
     num_pixels = response_img.size
 
     if ravel:
@@ -427,7 +432,9 @@ def get_feature_vector_of_window(window: np.ndarray, ravel: bool = False) -> tup
         return response_img, num_pixels
 
 
-def get_feature_vectors_of_labels(windows: dict, verbose: bool = True) -> dict:
+def get_feature_vectors_of_labels(
+    windows: dict, verbose: bool = True, filterbank_name: str = "MR8"
+) -> dict:
     """Each pixel of each annotated window has 8 responses associated with the filters used.
     These responses must be unified in some way, since they are part of the same class.
     Therefore, the following implementation transforms each of the responses obtained per window
@@ -456,7 +463,9 @@ def get_feature_vectors_of_labels(windows: dict, verbose: bool = True) -> dict:
             if verbose:
                 print(f"\t  Calculating response {i+1}... ", end="")
 
-            response, current_num_pixels = get_feature_vector_of_window(window)
+            response, current_num_pixels = get_feature_vector_of_window(
+                window, filterbank_name=filterbank_name
+            )
             num_pixels += current_num_pixels
             responses.append(response)
 
@@ -487,6 +496,7 @@ def get_feature_vectors_of_labels(windows: dict, verbose: bool = True) -> dict:
 def train(
     K: int,
     windows_train: dict,
+    filterbank_name: str,
     windows_dev: dict = None,
     precomputed_feature_vectors: dict = None,
     minibatch_size: int = None,
@@ -529,7 +539,7 @@ def train(
             windows_train = windows_to_train_on
 
         feature_vectors_of_label = get_feature_vectors_of_labels(
-            windows_train, verbose=verbose
+            windows_train, verbose=verbose, filterbank_name=filterbank_name
         )
 
     classes = np.asarray(
@@ -570,7 +580,9 @@ def train(
     # construct a matrix T of shape (C, K, 8) where each of the rows is a class and
     # each column has the texton k for k < K. Note that said texton must have 8
     # dimensions, since the pixels were represented precisely by 8 dimensions.
-    T = np.zeros((C, K, 8), dtype=np.float64)
+    T = np.zeros(
+        (C, K, feature_vectors_of_label[classes[0]].shape[-1]), dtype=np.float64
+    )
     for i, label in enumerate(classes):
         T[i] = textons[label].cluster_centers_
 
@@ -644,9 +656,9 @@ def segment(
     img_name: str,
     classes: np.ndarray,
     T: np.ndarray,
-    n: int,
-    sigma: float,
-    compactness: float,
+    algorithm: str,
+    algorithm_parameters: tuple,
+    filterbank_name: str = "MR8",
     plot_original: bool = False,
     plot_superpixels: bool = False,
     verbose: bool = False,
@@ -708,9 +720,11 @@ def segment(
 
     test_img = load_img(img_name, as_255=False, with_io=True)  # Image is loaded.
 
-    # The image is segmented using the SLIC algorithm.
-    slic_model = SLICSegmentation(n_segments=n, sigma=sigma, compactness=compactness)
-    segments = slic_model.segment(test_img)
+    # The image is segmented using the given algorithm.
+    superpixel_generation_model = SuperpixelSegmentation(
+        algorithm, algorithm_parameters
+    )
+    segments = superpixel_generation_model.segment(test_img)
 
     if plot_original:
         print("Original image:")
@@ -723,10 +737,12 @@ def segment(
 
     if plot_superpixels:
         print("\nSuperpixeles:")
-        slic_model.plot_output(test_img, segments)
+        superpixel_generation_model.plot_output(test_img, segments)
 
     S = get_superpixels(segments)  # Superpixels obtained from segments.
-    responses, _ = get_feature_vector_of_window(test_img)
+    responses, _ = get_feature_vector_of_window(
+        test_img, filterbank_name=filterbank_name
+    )
     S_feature_vectors = get_feature_vectors_of_superpixel(responses, S)
 
     def feature_vector_of(superpixel: int) -> np.ndarray:
@@ -759,7 +775,11 @@ def segment(
 
 
 def visualize_segmentation(
-    original_img: np.ndarray, classes: np.ndarray, S: dict, S_segmented: dict
+    original_img: np.ndarray,
+    classes: np.ndarray,
+    S: dict,
+    S_segmented: dict,
+    dpi: int = 120,
 ) -> None:
     """Plots a segmentation result on top of the original image.
 
@@ -768,6 +788,7 @@ def visualize_segmentation(
         classes (np.ndarray): Array of classes/labels.
         S (dict): Original dictionary of superpixels obtained from SLIC.
         S_segmented (dict): Segmentation result.
+        dpi (int, optional): DPI for plotted figure. Defaults to 120.
     """
     present_classes = list(Counter(S_segmented.values()))
     C_p = len(present_classes)
@@ -804,7 +825,7 @@ def visualize_segmentation(
 
     norm = mpl.colors.BoundaryNorm(np.arange(C_p + 1) - 0.5, C_p)
 
-    plt.figure(figsize=(9, 6), dpi=90)
+    plt.figure(figsize=(9, 6), dpi=dpi)
     plt.imshow(mark_boundaries(original_img, new_segments), cmap="gray")
     plt.imshow(overlay, cmap=colours, norm=norm, alpha=0.5)
     cb = plt.colorbar(ticks=np.arange(C_p))
@@ -849,7 +870,11 @@ def segmentation_to_class_matrix(
 
 
 def classification_confusion_matrix(
-    classes: np.ndarray, T: np.ndarray, windows: dict, max_test_number: int = -1
+    classes: np.ndarray,
+    T: np.ndarray,
+    windows: dict,
+    max_test_number: int = -1,
+    filterbank_name: str = "MR8",
 ) -> np.ndarray:
     """Obtains the confusion matrix for classification. Essentially, this confusion
     matrix evaluates how good the model classifies each labeled window. In other words,
@@ -876,7 +901,7 @@ def classification_confusion_matrix(
     for i, label in enumerate(classes):
         for window in windows[label]:
             current_feature_vectors, _ = get_feature_vector_of_window(
-                window, ravel=True
+                window, ravel=True, filterbank_name=filterbank_name
             )
             predicted_class = predict_class_of(current_feature_vectors, classes, T)
             predicted_class_index = np.where(classes == predicted_class)[0][0]
@@ -894,13 +919,13 @@ def evaluate_classification_performance(
     K: int,
     classes: np.ndarray,
     T: np.ndarray,
+    filterbank_name: str,
     windows_train: dict = None,
     windows_dev: dict = None,
     windows_test: dict = None,
-    plot_fig: bool = True,
     save_png: bool = True,
     save_xlsx: bool = True,
-    format_percentage: bool = True,
+    normalized: bool = True,
     max_test_number: int = -1,
 ) -> None:
     """Evaluates the model's classification performance by creating the corresponding
@@ -915,14 +940,11 @@ def evaluate_classification_performance(
         windows_train (dict, optional): Training set. Defaults to None.
         windows_dev (dict, optional): Development set. Defaults to None.
         windows_test (dict, optional): Test set. Defaults to None.
-        plot_fig (bool, optional): Specifies whether to plot the generated figures.
-                                   Defaults to True.
         save_png (bool, optional): Specifies whether to save the generated figures to
                                    the filesystem as .png files. Defaults to True.
         save_xlsx (bool, optional): Specifies whether to save the generated figures to
                                     the filesystem as a .xlsx file. Defaults to True.
-        format_percentage (bool, optional): True if numbers as percentages are desired. 
-                                            Defaults to False.
+        normalized (bool, optional): True if matrix is to be normalized.
         max_test_number (int, optional): Maximum number of labeled windows to take into
                                          account for evaluating classification
                                          performance. If set to -1, all labeled windows
@@ -930,7 +952,11 @@ def evaluate_classification_performance(
     """
 
     def helper(
-        windows: dict, category: str, img_filename: str, excel_filename: str
+        windows: dict,
+        category: str,
+        img_filename: str,
+        excel_filename: str,
+        sheetname: str,
     ) -> None:
         """Helper function to avoid repetitive evaluation of classification performance
         of training, development and test set and their corresponding windows dicts.
@@ -946,38 +972,50 @@ def evaluate_classification_performance(
                 f"[+] Computing classification performance on {category} set... ",
                 end="",
             )
-            _, confusion_matrix = classification_confusion_matrix(
-                classes, T, windows, max_test_number,
+            cm, cm_array = classification_confusion_matrix(
+                classes, T, windows, max_test_number, filterbank_name=filterbank_name
             )
+            # Maps integer classes to actual names of classes.
+            # Example: {'0': 'proeutectoid ferrite', '1': 'pearlite'}
+            integer_classes = [str(i) for i in range(len(classes))]
+            mapping = dict(zip(integer_classes, classes))
+            cm.relabel(mapping=mapping)
             print("Done")
             plot_confusion_matrix(
-                confusion_matrix,
-                classes,
-                title=f"K = {K}",
-                distinguishable_title=img_filename,
-                savefig=save_png,
-                showfig=plot_fig,
-                format_percentage=format_percentage,
+                cm, normalized=normalized, title=img_filename, save_png=save_png,
             )
             if save_xlsx:
                 print(" > Exporting to excel... ", end="")
                 matrix_to_excel(
-                    confusion_matrix,
+                    cm_array,
                     classes.tolist(),
-                    sheetname=f"K = {K}",
+                    sheetname=sheetname,
                     filename=excel_filename,
                 )
             print("Done")
+            print(" > Computing metrics... ", end="")
+            stats = statistics_from_matrix(cm)
+            print("Done")
+            return stats
 
     print("\n[*] CLASSIFICATION PERFORMANCE:\n")
     constant_title = f"(classification) K={K}"
+    metrics = {}
+    metrics["Train"] = helper(
+        windows_train, "Training", f"Train, {constant_title}", "Train", f"K = {K}"
+    )
+    metrics["Dev"] = helper(
+        windows_dev, "Development", f"Dev, {constant_title}", "Dev", f"K = {K}"
+    )
+    metrics["Test"] = helper(
+        windows_test, "Testing", f"Test, {constant_title}", "Test", f"K = {K}"
+    )
+    return metrics
 
-    helper(windows_train, "Training", f"Train, {constant_title}", "Train")
-    helper(windows_dev, "Development", f"Dev, {constant_title}", "Dev")
-    helper(windows_test, "Testing", f"Test, {constant_title}", "Test")
 
-
-def load_ground_truth(tif_file: str, classes: np.ndarray, folder: str = "Hypoeutectoid steel") -> dict:
+def load_ground_truth(
+    tif_file: str, classes: np.ndarray, folder: str = "Hypoeutectoid steel"
+) -> dict:
     """Obtains a dictionary of ground truth images, where keys are names of images
     and values are the corresponding ground truth images. This is the ground truth
     for segmentation.
@@ -1077,9 +1115,9 @@ def segmentation_confusion_matrix(
     ground_truth: dict,
     classes: np.ndarray,
     T: np.ndarray,
-    n: int,
-    compactness: float,
-    sigma: float,
+    algorithm: str,
+    algorithm_parameters: tuple,
+    filterbank_name: str,
     max_test_number: int = -1,
     src: str = PATH_LABELED,
 ) -> np.ndarray:
@@ -1110,7 +1148,12 @@ def segmentation_confusion_matrix(
     for k, name in enumerate(imgs):
         print(f"\t[?] Segmenting {name}... ", end="")
         original_img, superpixels, segmented_img = segment(
-            find_path_of_img(name, src=src), classes, T, n, sigma, compactness
+            find_path_of_img(name, src=src),
+            classes,
+            T,
+            algorithm,
+            algorithm_parameters,
+            filterbank_name=filterbank_name,
         )
         y_pred = segmentation_to_class_matrix(
             classes, superpixels, segmented_img, original_img.shape, as_int=True
@@ -1119,7 +1162,7 @@ def segmentation_confusion_matrix(
         print("Done")
 
         y_true = ground_truth[name].ravel()
-        
+
         if matrix is None:
             matrix = ConfusionMatrix(y_true, y_pred, transpose=True)
         else:
@@ -1137,12 +1180,12 @@ def evaluate_segmentation_performance(
     classes: np.ndarray,
     K: int,
     T: np.ndarray,
-    n: int,
-    sigma: float,
-    compactness: float,
-    plot_fig: bool = True,
-    save_png: bool = True,
-    save_xlsx: bool = True,
+    algorithm: str,
+    algorithm_parameters: str,
+    filterbank_name: str,
+    save_png: bool,
+    save_xlsx: bool,
+    dpi: int = 120,
     max_test_number: int = -1,
 ) -> None:
     """Evaluates the model's segmentation performance by creating the corresponding
@@ -1170,33 +1213,30 @@ def evaluate_segmentation_performance(
     """
     print("\n[*] SEGMENTATION PERFORMANCE:")
     print("\n[+] Computing segmentation performance... ")
-    _, confusion_matrix = segmentation_confusion_matrix(
+    cm, cm_array = segmentation_confusion_matrix(
         imgs,
         ground_truth,
         classes,
         T,
-        n,
-        compactness,
-        sigma,
+        algorithm,
+        algorithm_parameters,
+        filterbank_name=filterbank_name,
         max_test_number=max_test_number,
     )
     print("Done")
-    filename = f"(segmentation) K={K}"
     plot_confusion_matrix(
-        confusion_matrix,
-        classes,
-        title=f"K = {K}",
-        distinguishable_title=filename,
-        savefig=save_png,
-        showfig=plot_fig,
-        format_percentage=True,
+        cm,
+        normalized=True,
+        title=f"Confusion matrix (segmentation), K = {K}",
+        dpi=dpi,
+        save_png=save_png,
     )
     if save_xlsx:
         print(" > Exporting to excel... ", end="")
         matrix_to_excel(
-            confusion_matrix,
-            classes.tolist(),
-            sheetname=f"K = {K}",
-            filename="Segmentation",
+            cm_array, classes.tolist(), sheetname=f"K = {K}", filename="Segmentation",
         )
         print("Done")
+    print(" > Computing metrics... ", end="")
+    stats = statistics_from_matrix(cm)
+    return stats

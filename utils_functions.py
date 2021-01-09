@@ -9,7 +9,7 @@ import os
 import random
 import textwrap
 from pprint import pprint
-
+import pycm
 import cudf
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
@@ -241,76 +241,58 @@ def train_dev_test_split_table(train: dict, dev: dict, test: dict) -> None:
 
 
 def plot_confusion_matrix(
-    matrix: np.ndarray,
-    target_names: list,
+    matrix: pycm.ConfusionMatrix,
+    normalized: bool = True,
     title: str = "Confusion matrix",
-    distinguishable_title: str = None,
-    cmap=plt.cm.OrRd,
     dpi: int = 120,
-    figsize: tuple = (12, 8),
-    savefig: bool = True,
-    showfig: bool = True,
-    format_percentage: bool = True,
+    save_png: bool = True,
 ) -> None:
     """Plots a visual representation of a confusion matrix.
     Original: https://stackoverflow.com/questions/35585069/python-tabulating-confusion-matrix
     Args:
-        matrix (np.ndarray): Confusion matrix where rows are true classes and columns 
+        matrix (pycm.ConfusionMatrix): Pycm confusion matrix object.
                              are predicted classes.
-        target_names (list): Names of classes.
-        title (str, optional): Title of plot. Defaults to "Confusion matrix".
-        distinguishable_title (str, optional): Distinguishable title to add to the name 
-                                                of the file to which the plot would be 
-                                                saved. Defaults to None.
-        cmap (TYPE, optional): Colormap to use. Defaults to plt.cm.OrRd.
+        title (str, optional): Distinguishable title to add to the name of the file 
+                               to which the plot would be saved. Defaults to None.
         dpi (int, optional): DPI of plot. Defaults to 120.
-        figsize (tuple, optional): Figure size. Defaults to (12, 8).
-        savefig (bool, optional): Specifies whether to save the figure in the current 
+        save_png (bool, optional): Specifies whether to save the figure in the current 
                                     directory or not. Defaults to True.
-        showfig (bool, optional): Specifies whether to show the figure or not. Defaults
                                     to True.
-        format_percentage (bool, optional): True if numbers as percentages are desired. 
-                                            Defaults to False.
     """
-    plt.figure(figsize=figsize)
-    plt.imshow(matrix, interpolation="nearest", cmap=cmap)
-    plt.title(title)
-    plt.colorbar()
-    tick_marks = np.arange(len(target_names))
-    plt.xticks(tick_marks, target_names, rotation=45)
-    plt.yticks(tick_marks, target_names)
-    plt.tight_layout(pad=2)
-
-    width, height = matrix.shape
-
-    if format_percentage:
-        matrix = matrix / matrix.sum(axis=1, keepdims=True)
-        format_str = "{0:.1%}"
-    else:
-        format_str = "{}"
-
-    for x in range(width):
-        for y in range(height):
-            plt.annotate(
-                str(format_str.format(matrix[x][y])),
-                xy=(y, x),
-                horizontalalignment="center",
-                verticalalignment="center",
-            )
-
-    plt.ylabel("True class")
-    plt.xlabel("Predicted class")
-
-    if showfig:
-        plt.show()
-    if savefig:
-        if distinguishable_title is not None:
-            plt.savefig("Confusion matrix, " + distinguishable_title + ".png", dpi=dpi)
-        else:
-            plt.savefig("Confusion matrix.png", dpi=dpi)
-
+    fig = matrix.plot(
+        cmap=plt.cm.Reds, number_label=True, normalized=normalized, one_vs_all=True
+    )
+    plt.show()
     plt.close()
 
+    if save_png:
+        fig.figure.savefig(title + ".png", dpi=dpi)
+
+
+def statistics_from_matrix(matrix: pycm.ConfusionMatrix) -> dict:
+    return {
+        "Overall Statistics": {
+            "Standard Error": matrix.SE,
+            "Overall Accuracy": matrix.Overall_ACC,
+            "F1 Macro": matrix.F1_Macro,
+            "Accuracy Macro": matrix.ACC_Macro,
+            "Overall Jaccard Index": matrix.Overall_J,
+            "Class Balance Accuracy": matrix.CBA,
+            "P-Value": matrix.PValue,
+            "AUNU": matrix.AUNU,
+        },
+        "Class Statistics": {
+            "Accuracy": matrix.ACC,
+            "Error Rate": matrix.ERR,
+            "Matthews correlation coefficient": matrix.MCC,
+            "Jaccard Index": matrix.J,
+            "Confusion Entropy": matrix.CEN,
+            "Similarity index": matrix.sInd,
+            "Optimized Precision": matrix.OP,
+            "Averaged F1": matrix.average("F1"),
+        },
+        "matrix": matrix,
+    }
 
 
 def matrix_to_excel(
