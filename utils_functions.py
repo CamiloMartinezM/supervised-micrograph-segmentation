@@ -428,15 +428,16 @@ def save_variable_to_file(variable: object, name: str, dst: str = os.getcwd()) -
                 print(
                     "\t[+] Found " + new_filename + " in folder. Trying with ", end=""
                 )
-                new_filename = filename.split("-")[0] + "-" + str(i) + ".pickle"
+                new_filename = new_filename.split("-")[0] + "-" + str(i) + ".pickle"
                 print(new_filename + "... ")
                 i += 1
             print("[+] Done")
-    else:
-        print(f"[+] Saving variable to {name}.pickle... ", end="")
-        with open(os.path.join(dst, filename), "wb") as f:
-            pickle.dump(variable, f)
-        print("Done")
+            
+    filename = new_filename
+    print(f"[+] Saving variable to {filename}... ", end="")
+    with open(os.path.join(dst, filename), "wb") as f:
+        pickle.dump(variable, f)
+    print("Done")
 
 
 def load_variable_from_file(filename: str, src: str) -> object:
@@ -452,7 +453,7 @@ def load_variable_from_file(filename: str, src: str) -> object:
     if not filename.endswith(".pickle"):
         filename += ".pickle"
 
-    with open(filename, "rb") as f:
+    with open(os.path.join(src, filename), "rb") as f:
         variable = pickle.load(f)
 
     return variable
