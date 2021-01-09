@@ -15,7 +15,8 @@ from utils_functions import (
     load_img,
     train_dev_test_split,
     train_dev_test_split_table,
-    save_variable_to_file
+    save_variable_to_file,
+    load_variable_from_file
 )
 
 # Parámetros para las gráficas
@@ -181,7 +182,7 @@ ocurrencias de los textones más cercanos de todos los píxeles en el superpíxe
 # algorithm = "SLIC"
 # algorithm_parameters = (500, 5, 0.17)
 algorithm = "felzenszwalb"
-algorithm_parameters = (100, 0.5, 50)
+algorithm_parameters = (200, 2, 50)
 # algorithm = "quickshift"
 # algorithm_parameters = (0.5, 5, 8, 0)
 # algorithm = "watershed"
@@ -219,11 +220,6 @@ for K in K_range:
         K, classes, T, filterbank, windows_train, windows_dev, windows_test
     )
     K_evaluation[K] = classification_metrics
-
-# %%
-classification_metrics = model.evaluate_classification_performance(
-    K, classes, T, filterbank, windows_train, windows_dev, windows_test
-)
 
 # %%
 _set = "Train"
@@ -273,7 +269,10 @@ save_variable_to_file(windows_test, "testing_windows")
 save_variable_to_file(training_set, "training_set_imgs")
 save_variable_to_file(development_set, "development_set_imgs")
 save_variable_to_file(test_set, "testing_set_imgs")
+save_variable_to_file(feature_vectors_of_label, "feature_vectors", "saved_variables")
 
+# %%
+K_evaluation_2 = load_variable_from_file("K_evaluation", "saved_variables")
 
 # %%
 # Rendimiento en segmentación
