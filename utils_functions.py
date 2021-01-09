@@ -5,6 +5,7 @@ Created on Wed Nov 11 17:11:12 2020
 @author: Camilo Martínez
 """
 import itertools
+import pickle
 import os
 import random
 import textwrap
@@ -50,8 +51,8 @@ def train_dev_test_split(
     random.seed(230)  # make sure the same split is obtained every time the code is run
     random.shuffle(filenames)
 
-    split_1 = int(0.7 * len(filenames))
-    split_2 = int(0.9 * len(filenames))
+    split_1 = int(train_size * len(filenames))
+    split_2 = int((train_size + dev_size) * len(filenames))
     train_filenames = filenames[:split_1]
     dev_filenames = filenames[split_1:split_2]
     test_filenames = filenames[split_2:]
@@ -266,7 +267,7 @@ def plot_confusion_matrix(
     plt.close()
 
     if save_png:
-        fig.figure.savefig(title + ".png", dpi=dpi)
+        fig.figure.savefig(title + ".png", bbox_inches="tight", dpi=dpi)
 
 
 def statistics_from_matrix(matrix: pycm.ConfusionMatrix) -> dict:
@@ -394,6 +395,67 @@ def nested_dicts_to_matrix(dictionary: dict) -> np.ndarray:
         matrix.append(list(row.values()))
 
     return np.asarray(matrix)
+
+
+def save_variable_to_file(variable: object, name: str, dst: str = os.getcwd()) -> None:
+    """Saves a variable to a .pickle file.
+
+    Args:
+        variable (object): Variable to save to file. It can be of any type.
+        name (str): Name of variable, which will be used as the filename for the 
+                    .pickle file.
+        dst (str, optional): Destination of file (folder). Defaults to current directory.
+    """
+    filename = name + ".pickle"
+    if filename in os.listdir(dst):
+        print("[WARNING] That variable appears to have been saved before.")
+        action = "-1"
+        while action not in ["1", "2"]:
+            action = input("[?] Overwrite (1), rename automatically (2) >> ").strip()
+
+        if action == "1":
+            print("[+] Overwriting... ", end="")
+            with open(os.path.join(dst, filename), "wb") as f:
+                pickle.dump(variable, f)
+            print("Done")
+        else:  # Rename
+            print("[+] Renaming... ")
+            new_filename = filename.replace(".pickle", "") + "-1.pickle"
+            i = 2
+            while new_filename in os.listdir(
+                dst
+            ):  # Check if this renaming has been done before
+                print(
+                    "\t[+] Found " + new_filename + " in folder. Trying with ", end=""
+                )
+                new_filename = filename.split("-")[0] + "-" + str(i) + ".pickle"
+                print(new_filename + "... ")
+                i += 1
+            print("[+] Done")
+    else:
+        print(f"[+] Saving variable to {name}.pickle... ", end="")
+        with open(os.path.join(dst, filename), "wb") as f:
+            pickle.dump(variable, f)
+        print("Done")
+
+
+def load_variable_from_file(filename: str, src: str) -> object:
+    """Returns a variable loaded from a .pickle file.
+
+    Args:
+        filename (str): Name of .pickle file.
+        src (str, optional): Source of file (folder). Defaults to current directory.
+        
+    Returns:
+        object: Loaded variable.
+    """
+    if not filename.endswith(".pickle"):
+        filename += ".pickle"
+
+    with open(filename, "rb") as f:
+        variable = pickle.load(f)
+
+    return variable
 
 
 def formatter(format_str, widths, *columns):

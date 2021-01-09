@@ -312,7 +312,7 @@ def filterbank_example(
         dpi (int, optional): DPI of plotted figure. Defaults to 80.
     """
     MR8 = FilterBank(name=filterbank_name)  # MR8 Filter bank
-    print("Filters (RFS Filter Bank):")
+    print("\nFilters (RFS Filter Bank):")
     MR8.plot_filters()
 
     # Example
@@ -912,7 +912,7 @@ def classification_confusion_matrix(
 
     cm = ConfusionMatrix(y_true, y_pred, transpose=True)
 
-    return cm, cm.to_array()
+    return cm, cm.to_array(normalized=True)
 
 
 def evaluate_classification_performance(
@@ -1171,7 +1171,7 @@ def segmentation_confusion_matrix(
         if k == max_test_number:
             break
 
-    return matrix, matrix.to_array()
+    return matrix, matrix.to_array(normalized=True)
 
 
 def evaluate_segmentation_performance(

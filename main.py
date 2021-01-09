@@ -5,6 +5,9 @@ Created on Thu Nov 12 08:42:22 2020
 @author: Camilo Martínez
 """
 import model
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
 import os
 from utils_functions import (
     compare2imgs,
@@ -12,7 +15,13 @@ from utils_functions import (
     load_img,
     train_dev_test_split,
     train_dev_test_split_table,
+    save_variable_to_file
 )
+
+# Parámetros para las gráficas
+matplotlib.rcParams["font.family"] = "cmr10"
+matplotlib.rcParams["axes.unicode_minus"] = False
+matplotlib.rcParams.update({"font.size": 16})
 
 print(f"\nPath to labeled micrographs: {model.PATH_LABELED}")
 print(f"Path to preprocessed micrographs: {model.PATH_PREPROCESSED}")
@@ -123,7 +132,7 @@ dicha clase o que sí se entrene, pero no sea validado o probado.
     windows_train,
     windows_dev,
     windows_test,
-) = train_dev_test_split(windows, train_size=0.7, dev_size=0.2)
+) = train_dev_test_split(windows, train_size=0.6, dev_size=0.2)
 
 # Table that summarizes the number of windows noted by class or label that correspond
 # to the phases or morphologies of interest in the micrographs.
@@ -136,10 +145,10 @@ A continuación, se muestra una función que entrena el modelo, primero construy
 matriz de *feature vectors* para cada una de las clases, y luego haciendo un 
 *clustering* que aprenda los textones asociados a cada una de ellas.
 """
-K = 200
-filterbank = "MAT"
+K = 6
+filterbank = "MR8"
 feature_vectors_of_label, classes, T, _ = model.train(
-    K, windows_train, minibatch_size=1000, filterbank_name=filterbank
+    K, windows_train, filterbank_name=filterbank
 )
 
 # %%
@@ -172,13 +181,13 @@ ocurrencias de los textones más cercanos de todos los píxeles en el superpíxe
 # algorithm = "SLIC"
 # algorithm_parameters = (500, 5, 0.17)
 algorithm = "felzenszwalb"
-algorithm_parameters = (100, 10, 50)
+algorithm_parameters = (100, 0.5, 50)
 # algorithm = "quickshift"
 # algorithm_parameters = (0.5, 5, 8, 0)
 # algorithm = "watershed"
 # algorithm_parameters = (250, 0.001)
 original_img, superpixels, segmentation = model.segment(
-    find_path_of_img("as0013.png", model.PATH_LABELED),
+    find_path_of_img("cs0327.png", model.PATH_LABELED),
     classes,
     T,
     algorithm=algorithm,
@@ -195,27 +204,88 @@ model.visualize_segmentation(original_img, classes, superpixels, segmentation)
 """Evaluación de rendimiento"""
 # Rendimiento en clasificación
 feature_vectors_of_label = None
-K_evaluation = {} 
-for K in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100]:
+filterbank = "MR8"
+K_evaluation = {}
+K_range = list(range(1, 21)) + list(range(30, 210, 10))
+for K in K_range:
+    print(f"\n[*] CURRENT K = {K}\n")
     feature_vectors_of_label, classes, T, _ = model.train(
         K,
         windows_train,
+        filterbank,
         precomputed_feature_vectors=feature_vectors_of_label,
     )
     classification_metrics = model.evaluate_classification_performance(
-        K, classes, T, windows_train, windows_dev, windows_test
+        K, classes, T, filterbank, windows_train, windows_dev, windows_test
     )
+    K_evaluation[K] = classification_metrics
+
+# %%
+classification_metrics = model.evaluate_classification_performance(
+    K, classes, T, filterbank, windows_train, windows_dev, windows_test
+)
+
+# %%
+_set = "Train"
+stat = "Overall Accuracy"
+x_lim = [0, 20]
+
+x = K_range
+y = [K_evaluation[i][_set]["Overall Statistics"][stat] for i in x]
+x_highlight = 6
+
+highlight = (x_highlight, y[x.index(x_highlight)])
+
+plt.figure(figsize=(10, 8))
+y_max = max(y)
+pos = y.index(y_max)
+print(f"K = {K_range[pos]}")
+print(K_evaluation[K_range[pos]][_set]["Overall Statistics"][stat])
+if _set == "Train":
+    title = "Training"
+elif _set == "Dev":
+    title = "Development"
+else:
+    title = "Testing"
+plt.title(title)
+plt.scatter(x, y, color="k")
+plt.scatter(*highlight, color="r", s=100)
+x = np.array(x)
+plt.xlabel("K")
+plt.ylabel(stat)
+plt.grid(b=True, which='major', color='k', linestyle='--', alpha=0.2)
+plt.grid(b=True, which='minor', color='k', linestyle='--', alpha=0.1)
+plt.xlim(x_lim)
+plt.xticks(x[:x.tolist().index(x_lim[1]) + 1])
+plt.minorticks_on()
+plt.tight_layout()
+plt.savefig(_set + f" changing K (to {x_lim[-1]}.png", dpi=300)
+plt.show()
+plt.close()
+
+# %%
+"""Persistencia de variables importantes"""
+save_variable_to_file(K_evaluation, "K_evaluation")
+save_variable_to_file(T, f"texton_matrix_K_{K}")
+save_variable_to_file(windows_train, "training_windows")
+save_variable_to_file(windows_dev, "development_windows")
+save_variable_to_file(windows_test, "testing_windows")
+save_variable_to_file(training_set, "training_set_imgs")
+save_variable_to_file(development_set, "development_set_imgs")
+save_variable_to_file(test_set, "testing_set_imgs")
+
+
 # %%
 # Rendimiento en segmentación
-segmentation_metrics = model.evaluate_segmentation_performance(
-    test_set[:1],
-    ground_truth,
-    classes,
-    K,
-    T,
-    algorithm,
-    algorithm_parameters,
-    filterbank_name=filterbank,
-    save_png=True,
-    save_xlsx=True,
-)
+# segmentation_metrics = model.evaluate_segmentation_performance(
+#     test_set[:1],
+#     ground_truth,
+#     classes,
+#     K,
+#     T,
+#     algorithm,
+#     algorithm_parameters,
+#     filterbank_name=filterbank,
+#     save_png=True,
+#     save_xlsx=True,
+# )
