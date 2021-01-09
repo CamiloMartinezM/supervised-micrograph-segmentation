@@ -88,7 +88,7 @@ de 38 (6 orientaciones a 3 escalas para 2 filtros orientados, más 2 isotrópico
 (3 escalas para 2 filtros, más 2 isotrópicos). Por ello, el MR8 consta de 38 filtros, 
 pero solo 8 respuestas de filtro.
 """
-# model.filterbank_example()
+model.filterbank_example()
 
 # %%
 """Extracción de las ventanas/regiones anotadas
@@ -136,8 +136,11 @@ A continuación, se muestra una función que entrena el modelo, primero construy
 matriz de *feature vectors* para cada una de las clases, y luego haciendo un 
 *clustering* que aprenda los textones asociados a cada una de ellas.
 """
-K = 100
-feature_vectors_of_label, classes, T, _ = model.train(K, windows_train, minibatch_size=1000)
+K = 200
+filterbank = "MAT"
+feature_vectors_of_label, classes, T, _ = model.train(
+    K, windows_train, minibatch_size=1000, filterbank_name=filterbank
+)
 
 # %%
 """Carga de las imágenes ground truth.
@@ -145,7 +148,9 @@ feature_vectors_of_label, classes, T, _ = model.train(K, windows_train, minibatc
 Las imágenes segmentadas (ground truth) se guardan en un diccionario cuyas llaves son los
 nombres de las imágenes y los valores son las respectivas segmentaciones.
 """
-ground_truth = model.load_ground_truth(os.path.join(model.PATH_LABELED, "(Segmented)HypoeutectoidStack.tif"), classes)
+ground_truth = model.load_ground_truth(
+    os.path.join(model.PATH_LABELED, "(Segmented)HypoeutectoidStack.tif"), classes
+)
 
 # %%
 model.plot_image_with_ground_truth("as0013.png", ground_truth, alpha=0.6)
@@ -164,13 +169,21 @@ y los valores a la clase a la que dicho superpíxel pertenece. El fundamento mat
 está basado en una decisión de clasificación colectiva de cada superpíxel basada en las
 ocurrencias de los textones más cercanos de todos los píxeles en el superpíxel.
 """
+# algorithm = "SLIC"
+# algorithm_parameters = (500, 5, 0.17)
+algorithm = "felzenszwalb"
+algorithm_parameters = (100, 10, 50)
+# algorithm = "quickshift"
+# algorithm_parameters = (0.5, 5, 8, 0)
+# algorithm = "watershed"
+# algorithm_parameters = (250, 0.001)
 original_img, superpixels, segmentation = model.segment(
-    find_path_of_img("cs0327.png", model.PATH_LABELED),
+    find_path_of_img("as0013.png", model.PATH_LABELED),
     classes,
     T,
-    n=500,
-    compactness=0.17,
-    sigma=5,
+    algorithm=algorithm,
+    algorithm_parameters=algorithm_parameters,
+    filterbank_name=filterbank,
     plot_original=True,
     plot_superpixels=True,
     verbose=True,
@@ -180,19 +193,29 @@ model.visualize_segmentation(original_img, classes, superpixels, segmentation)
 
 # %%
 """Evaluación de rendimiento"""
-model.evaluate_classification_performance(
-    K, classes, T, windows_train, windows_dev, windows_test, plot_fig=False,
-)
-
+# Rendimiento en clasificación
+feature_vectors_of_label = None
+K_evaluation = {} 
+for K in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100]:
+    feature_vectors_of_label, classes, T, _ = model.train(
+        K,
+        windows_train,
+        precomputed_feature_vectors=feature_vectors_of_label,
+    )
+    classification_metrics = model.evaluate_classification_performance(
+        K, classes, T, windows_train, windows_dev, windows_test
+    )
 # %%
-model.evaluate_segmentation_performance(
-    test_set,
+# Rendimiento en segmentación
+segmentation_metrics = model.evaluate_segmentation_performance(
+    test_set[:1],
     ground_truth,
     classes,
     K,
     T,
-    1000,
-    5,
-    0.17,
-    False,
+    algorithm,
+    algorithm_parameters,
+    filterbank_name=filterbank,
+    save_png=True,
+    save_xlsx=True,
 )

@@ -13,7 +13,15 @@ import numpy as np
 from joblib import Parallel, delayed
 from scipy.ndimage import convolve
 from scipy.signal import fftconvolve
-from skimage.segmentation import mark_boundaries, slic
+from scipy.io import loadmat
+from skimage.segmentation import (
+    mark_boundaries,
+    slic,
+    felzenszwalb,
+    quickshift,
+    watershed,
+)
+from skimage.filters import sobel
 
 from utils_functions import get_folder, load_img, find_path_of_img
 
@@ -135,20 +143,17 @@ class Scaler:
         print(f"\nFinished. {count} processed.")
 
 
-class SLICSegmentation:
-    """SLIC algorithm implementation with the library skimage."""
+class SuperpixelSegmentation:
+    """Superpixel algorithm implementation with the library skimage."""
 
-    def __init__(
-        self, n_segments: int = 500, sigma: int = 5, compactness: int = 0.1,
-    ) -> None:
+    def __init__(self, algorithm: str, parameters: tuple,) -> None:
         """
-        Args:
+        # Args:
             n_segments (int, optional): Approximate number of superpixels to create.
             sigma, compactness (int, optional): Optimizable parameters of the algorithm.
         """
-        self.n_segments = n_segments
-        self.sigma = sigma
-        self.compactness = compactness
+        self.algorithm = algorithm
+        self.parameters = parameters
 
     def segment(self, image: np.ndarray) -> np.ndarray:
         """Segments the input image in superpixels.
@@ -159,13 +164,35 @@ class SLICSegmentation:
         Returns:
             np.ndarray: Array of superpixels with 0 <= values < n_segments.
         """
-        segments = slic(
-            image,
-            n_segments=self.n_segments,
-            sigma=self.sigma,
-            compactness=self.compactness,
-            start_label=1
-        )
+        if self.algorithm == "SLIC":
+            n_segments, sigma, compactness = self.parameters
+            segments = slic(
+                image,
+                n_segments=n_segments,
+                sigma=sigma,
+                compactness=compactness,
+                start_label=1,
+            )
+        elif self.algorithm == "felzenszwalb":
+            scale, sigma, min_size = self.parameters
+            segments = felzenszwalb(image, scale=scale, sigma=sigma, min_size=min_size)
+        elif self.algorithm == "quickshift":
+            ratio, kernel_size, max_dist, sigma = self.parameters
+            segments = quickshift(
+                image,
+                ratio=ratio,
+                kernel_size=kernel_size,
+                max_dist=max_dist,
+                sigma=sigma,
+                convert2lab=False,
+            )
+        elif self.algorithm == "watershed":
+            gradient = sobel(image)
+            markers, compactness = self.parameters
+            segments = watershed(gradient, markers=markers, compactness=compactness)
+        else:
+            segments = None
+
         return segments
 
     def plot_output(
@@ -191,21 +218,38 @@ class SLICSegmentation:
 # based on several edge and bar filters.
 # Adapted to Python by Andreas Mueller amueller@ais.uni-bonn.de
 # https://gist.github.com/amueller/3129692
-class FilterBankMR8:
-    def __init__(self, sigmas: list, n_orientations: int) -> None:
-        n_sigmas = len(sigmas)
+class FilterBank:
+    def __init__(self, name) -> None:
+        if name == "MR8":
+            sigmas, n_orientations = [1, 2, 4], 6
+            n_sigmas = len(sigmas)
 
-        self.edge, self.bar, self.rot = FilterBankMR8.makeRFSfilters(
-            sigmas=sigmas, n_orientations=n_orientations
-        )
-        self.filterbank = chain(self.edge, self.bar, self.rot)
+            self.edge, self.bar, self.rot = FilterBank.makeRFSfilters(
+                sigmas=sigmas, n_orientations=n_orientations
+            )
+            self.filterbank = chain(self.edge, self.bar, self.rot)
 
-        self.n_sigmas = n_sigmas
-        self.sigmas = sigmas
-        self.n_orientations = n_orientations
+            self.n_sigmas = n_sigmas
+            self.sigmas = sigmas
+            self.n_orientations = n_orientations
+            self.n_filters = 8
+        elif name == "MAT":
+            self.filterbank = loadmat("filterbank.mat")["filterbank"].transpose(
+                (2, 0, 1)
+            )
+            self.n_filters = self.filterbank.shape[0]
+        else:
+            self.filterbank = None
+
+        self.name = name
 
     def response(self, img: np.ndarray, use_fftconvolve: bool = True) -> np.ndarray:
-        return FilterBankMR8.apply_filterbank(img, self.filterbank, use_fftconvolve)
+        if self.name == "MR8":
+            return FilterBank.apply_filterbankMR8(img, self.filterbank, use_fftconvolve)
+        elif self.name == "MAT":
+            return FilterBank.apply_filterbankMAT(img, self.filterbank, use_fftconvolve)
+        else:
+            return None
 
     @staticmethod
     def makeRFSfilters(
@@ -303,21 +347,43 @@ class FilterBankMR8:
         # fig.savefig("filters.png", dpi=dpi)
 
     @staticmethod
-    def apply_filterbank(
+    def apply_filterbankMR8(
         img: np.ndarray, filterbank: tuple, use_fftconvolve: bool
     ) -> np.ndarray:
         result = np.zeros((8, *img.shape))
         for i, battery in enumerate(filterbank):
             if use_fftconvolve:
-                response = [fftconvolve(img, filt, mode="same") for filt in battery]
+                response = [
+                    fftconvolve(img, np.flip(filt), mode="same") for filt in battery
+                ]
             else:
                 response = Parallel(n_jobs=-1)(
-                    delayed(convolve)(img, filt) for filt in battery
+                    delayed(convolve)(img, np.flip(filt)) for filt in battery
                 )
             max_response = np.max(response, axis=0)
             result[i] = max_response
 
         return result
+
+    @staticmethod
+    def apply_filterbankMAT(
+        img: np.ndarray, filterbank: np.ndarray, use_fftconvolve: bool
+    ) -> np.ndarray:
+        if use_fftconvolve:
+            result = np.dstack(
+                [fftconvolve(img, np.flip(filt), mode="same") for filt in filterbank]
+            )
+        else:
+            result = Parallel(n_jobs=-1)(
+                delayed(convolve)(img, np.flip(filt)) for filt in filterbank
+            )
+
+        result = result.transpose((2, 0, 1))
+        return result
+
+    @staticmethod
+    def _loadmat(filename: str) -> np.ndarray:
+        return loadmat("filterbank.mat")["filterbank"]
 
 
 class MultiscaleStatistics:
