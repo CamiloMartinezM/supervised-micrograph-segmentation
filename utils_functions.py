@@ -19,6 +19,7 @@ import pandas as pd
 from openpyxl import load_workbook
 from prettytable import PrettyTable
 from skimage import color, io
+from sklearn.metrics import jaccard_score
 
 
 def train_dev_test_split(
@@ -27,14 +28,16 @@ def train_dev_test_split(
     """Splits the given data into three sets (train, development and test set).
 
     Args:
-        data (dict): Complete dataset as a dictionary whose keys are labels and values are the
-                     corresponding annotated image windows as numpy arrays. Values are of the
-                     form (filename, window).
+        data (dict): Complete dataset as a dictionary whose keys are labels and values 
+                     are the corresponding annotated image windows as numpy arrays. 
+                     Values are of the form (filename, window).
         train_size (float): Percentage of the dataset that will be used as training set.
-        dev_size (float): Percentage of the dataset that will be used as development set.
+        dev_size (float): Percentage of the dataset that will be used as development 
+                          set.
 
     Returns:
-        tuple: train, dev and test sets as dictionaries of the same structure as the given dataset.
+        tuple: Train, dev and test sets as dictionaries of the same structure as the 
+               given dataset.
 
     """
     if train_size + dev_size > 1:
@@ -303,14 +306,15 @@ def matrix_to_excel(
     path: str = os.getcwd(),
     filename: str = "Test",
 ) -> None:
-    """Exports a square matrix to an excel file. If a file with the given name already exists, a new
-    sheetname is added and the file is not overwritten.
+    """Exports a square matrix to an excel file. If a file with the given name already 
+    exists, a new sheetname is added and the file is not overwritten.
 
     Args:
         matrix (np.ndarray): Data as a matrix.
         cols (list): Labels of each row and column of the given matrix.
         sheetname (str): Sheetname.
-        path (str, optional): Specifies where to put the excel file. Defaults to os.getcwd().
+        path (str, optional): Specifies where to put the excel file. Defaults to 
+                              os.getcwd().
         filename (str, optional): Excel filename. Defaults to "Test".
     """
     filename += ".xlsx"
@@ -404,7 +408,8 @@ def save_variable_to_file(variable: object, name: str, dst: str = os.getcwd()) -
         variable (object): Variable to save to file. It can be of any type.
         name (str): Name of variable, which will be used as the filename for the 
                     .pickle file.
-        dst (str, optional): Destination of file (folder). Defaults to current directory.
+        dst (str, optional): Destination of file (folder). Defaults to current 
+                             directory.
     """
     filename = name + ".pickle"
     if filename in os.listdir(dst):
@@ -432,7 +437,7 @@ def save_variable_to_file(variable: object, name: str, dst: str = os.getcwd()) -
                 print(new_filename + "... ")
                 i += 1
             print("[+] Done")
-            
+
     filename = new_filename
     print(f"[+] Saving variable to {filename}... ", end="")
     with open(os.path.join(dst, filename), "wb") as f:
@@ -459,6 +464,40 @@ def load_variable_from_file(filename: str, src: str) -> object:
     return variable
 
 
+def jaccard_index_from_ground_truth(
+    segmented: np.ndarray, ground_truth: np.ndarray, classes: np.ndarray,
+) -> float:
+    """Calculates the Jaccard index of a segmented image with its corresponding ground
+    truth image.
+
+    Args:
+        segmented (np.ndarray): Segmented image as a numpy array.
+        ground_truth (np.ndarray): Ground truth image as a numpy array.
+
+    Returns:
+        float: Dictionary of Jaccard Index scores calculated as a micro, macro and per
+               class statistic.
+    """
+    jaccard = {}
+    for average_type in [None, "micro", "macro", "samples"]:
+        if average_type is None:
+            key = "Per Class"
+        else:
+            key = average_type[0].upper() + average_type[1:]
+
+        try:
+            jaccard[key] = jaccard_score(
+                segmented.flatten(), ground_truth.flatten(), average=average_type,
+            )
+        except:
+            continue
+
+        if key == "Per Class":
+            jaccard[key] = dict(zip(classes, jaccard[key]))
+
+    return jaccard
+
+
 def formatter(format_str, widths, *columns):
     """
     format_str describes the format of the report.
@@ -468,7 +507,8 @@ def formatter(format_str, widths, *columns):
     {width[i]} is replaced by the ith element of the list widths.
 
     All the power of Python's string format spec is available for you to use
-    in format_str. You can use it to define fill characters, alignment, width, type, etc.
+    in format_str. You can use it to define fill characters, alignment, width, 
+    type, etc.
 
     formatter takes an arbitrary number of arguments.
     Every argument after format_str and widths should be a list of strings.
