@@ -34,6 +34,7 @@ from utils_functions import (
     plot_confusion_matrix,
     print_table_from_dict,
     statistics_from_matrix,
+    jaccard_index_from_ground_truth,
 )
 
 src = ""
@@ -1110,7 +1111,7 @@ def plot_image_with_ground_truth(
     plt.close()
 
 
-def segmentation_confusion_matrix(
+def segmentation_metrics(
     imgs: list,
     ground_truth: dict,
     classes: np.ndarray,
@@ -1145,6 +1146,7 @@ def segmentation_confusion_matrix(
         np.ndarray: Segmentation confusion matrix.
     """
     matrix = None
+    jaccard_per_img = {}
     for k, name in enumerate(imgs):
         print(f"\t[?] Segmenting {name}... ", end="")
         original_img, superpixels, segmented_img = segment(
@@ -1155,23 +1157,31 @@ def segmentation_confusion_matrix(
             algorithm_parameters,
             filterbank_name=filterbank_name,
         )
-        y_pred = segmentation_to_class_matrix(
+        segmented_img_as_matrix = segmentation_to_class_matrix(
             classes, superpixels, segmented_img, original_img.shape, as_int=True
-        ).ravel()
+        )
+        y_pred = segmented_img_as_matrix.ravel()
 
         print("Done")
-
         y_true = ground_truth[name].ravel()
 
         if matrix is None:
+            print("\t    > Calculating confusion matrix... ", end="")
             matrix = ConfusionMatrix(y_true, y_pred, transpose=True)
         else:
+            print("\t    > Combining confusion matrix with previous one... ", end="")
             matrix = matrix.combine(ConfusionMatrix(y_true, y_pred, transpose=True))
 
+        print("Done")
+        print("\t    > Calculating Jaccard Index for this image... ", end="")
+        jaccard_per_img[name] = jaccard_index_from_ground_truth(
+            segmented_img_as_matrix, ground_truth[name], classes
+        )
+        print("Done")
         if k == max_test_number:
             break
 
-    return matrix, matrix.to_array(normalized=True)
+    return matrix, matrix.to_array(normalized=True), jaccard_per_img
 
 
 def evaluate_segmentation_performance(
@@ -1213,7 +1223,7 @@ def evaluate_segmentation_performance(
     """
     print("\n[*] SEGMENTATION PERFORMANCE:")
     print("\n[+] Computing segmentation performance... ")
-    cm, cm_array = segmentation_confusion_matrix(
+    cm, cm_array, jaccard_per_img = segmentation_metrics(
         imgs,
         ground_truth,
         classes,
@@ -1224,6 +1234,11 @@ def evaluate_segmentation_performance(
         max_test_number=max_test_number,
     )
     print("Done")
+    # Maps integer classes to actual names of classes.
+    # Example: {'0': 'proeutectoid ferrite', '1': 'pearlite'}
+    integer_classes = [str(i) for i in range(len(classes))]
+    mapping = dict(zip(integer_classes, classes))
+    cm.relabel(mapping=mapping)
     plot_confusion_matrix(
         cm,
         normalized=True,
@@ -1239,4 +1254,4 @@ def evaluate_segmentation_performance(
         print("Done")
     print(" > Computing metrics... ", end="")
     stats = statistics_from_matrix(cm)
-    return stats
+    return stats, jaccard_per_img

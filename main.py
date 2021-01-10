@@ -163,9 +163,6 @@ ground_truth = model.load_ground_truth(
 )
 
 # %%
-model.plot_image_with_ground_truth("as0013.png", ground_truth, alpha=0.6)
-
-# %%
 """Segmentación
 
 En primer lugar, se obtienen los superpíxeles de la imagen de prueba, al igual que los 
@@ -179,16 +176,18 @@ y los valores a la clase a la que dicho superpíxel pertenece. El fundamento mat
 está basado en una decisión de clasificación colectiva de cada superpíxel basada en las
 ocurrencias de los textones más cercanos de todos los píxeles en el superpíxel.
 """
+test_img = "cs0368.png"
+
 # algorithm = "SLIC"
 # algorithm_parameters = (500, 5, 0.17)
 algorithm = "felzenszwalb"
-algorithm_parameters = (200, 2, 50)
+algorithm_parameters = (200, 0.8, 200)
 # algorithm = "quickshift"
 # algorithm_parameters = (0.5, 5, 8, 0)
 # algorithm = "watershed"
 # algorithm_parameters = (250, 0.001)
 original_img, superpixels, segmentation = model.segment(
-    find_path_of_img("cs0327.png", model.PATH_LABELED),
+    find_path_of_img(test_img, model.PATH_LABELED),
     classes,
     T,
     algorithm=algorithm,
@@ -200,6 +199,12 @@ original_img, superpixels, segmentation = model.segment(
 )
 
 model.visualize_segmentation(original_img, classes, superpixels, segmentation)
+
+# %%
+for test_img in ground_truth:
+    print(test_img)
+    model.plot_image_with_ground_truth(test_img, ground_truth, alpha=0.6)
+
 
 # %%
 """Evaluación de rendimiento"""
@@ -261,30 +266,30 @@ plt.close()
 
 # %%
 """Persistencia de variables importantes"""
-save_variable_to_file(K_evaluation, "K_evaluation")
-save_variable_to_file(T, f"texton_matrix_K_{K}")
-save_variable_to_file(windows_train, "training_windows")
-save_variable_to_file(windows_dev, "development_windows")
-save_variable_to_file(windows_test, "testing_windows")
-save_variable_to_file(training_set, "training_set_imgs")
-save_variable_to_file(development_set, "development_set_imgs")
-save_variable_to_file(test_set, "testing_set_imgs")
-save_variable_to_file(feature_vectors_of_label, "feature_vectors", "saved_variables")
+# save_variable_to_file(K_evaluation, "K_evaluation")
+# save_variable_to_file(T, f"texton_matrix_K_{K}")
+# save_variable_to_file(windows_train, "training_windows")
+# save_variable_to_file(windows_dev, "development_windows")
+# save_variable_to_file(windows_test, "testing_windows")
+# save_variable_to_file(training_set, "training_set_imgs")
+# save_variable_to_file(development_set, "development_set_imgs")
+# save_variable_to_file(test_set, "testing_set_imgs")
+# save_variable_to_file(feature_vectors_of_label, "feature_vectors", "saved_variables")
 
 # %%
 K_evaluation_2 = load_variable_from_file("K_evaluation", "saved_variables")
 
 # %%
 # Rendimiento en segmentación
-# segmentation_metrics = model.evaluate_segmentation_performance(
-#     test_set[:1],
-#     ground_truth,
-#     classes,
-#     K,
-#     T,
-#     algorithm,
-#     algorithm_parameters,
-#     filterbank_name=filterbank,
-#     save_png=True,
-#     save_xlsx=True,
-# )
+segmentation_metrics, jaccard_per_img = model.evaluate_segmentation_performance(
+    test_set[:2],
+    ground_truth,
+    classes,
+    K,
+    T,
+    algorithm,
+    algorithm_parameters,
+    filterbank_name=filterbank,
+    save_png=True,
+    save_xlsx=True,
+)
