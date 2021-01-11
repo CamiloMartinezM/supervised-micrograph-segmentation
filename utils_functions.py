@@ -401,7 +401,9 @@ def nested_dicts_to_matrix(dictionary: dict) -> np.ndarray:
     return np.asarray(matrix)
 
 
-def save_variable_to_file(variable: object, name: str, dst: str = os.getcwd()) -> None:
+def save_variable_to_file(
+    variable: object, name: str, dst: str = os.getcwd(), overwrite: bool = False
+) -> None:
     """Saves a variable to a .pickle file.
 
     Args:
@@ -412,7 +414,7 @@ def save_variable_to_file(variable: object, name: str, dst: str = os.getcwd()) -
                              directory.
     """
     filename = name + ".pickle"
-    if filename in os.listdir(dst):
+    if filename in os.listdir(dst) and not overwrite:
         print("[WARNING] That variable appears to have been saved before.")
         action = "-1"
         while action not in ["1", "2"]:
@@ -437,8 +439,9 @@ def save_variable_to_file(variable: object, name: str, dst: str = os.getcwd()) -
                 print(new_filename + "... ")
                 i += 1
             print("[+] Done")
-
-    filename = new_filename
+        
+            filename = new_filename
+    
     print(f"[+] Saving variable to {filename}... ", end="")
     with open(os.path.join(dst, filename), "wb") as f:
         pickle.dump(variable, f)
@@ -496,7 +499,6 @@ def jaccard_index_from_ground_truth(
             jaccard[key] = dict(zip(classes, jaccard[key]))
 
     return jaccard
-
 
 def formatter(format_str, widths, *columns):
     """

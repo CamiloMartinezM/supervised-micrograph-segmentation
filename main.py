@@ -16,16 +16,43 @@ from utils_functions import (
     train_dev_test_split,
     train_dev_test_split_table,
     save_variable_to_file,
-    load_variable_from_file
+    load_variable_from_file,
 )
 
 # Parámetros para las gráficas
 matplotlib.rcParams["font.family"] = "cmr10"
 matplotlib.rcParams["axes.unicode_minus"] = False
-matplotlib.rcParams.update({"font.size": 16})
+matplotlib.rcParams.update({"font.size": 20})
 
 print(f"\nPath to labeled micrographs: {model.PATH_LABELED}")
 print(f"Path to preprocessed micrographs: {model.PATH_PREPROCESSED}")
+
+# %%
+"""Carga de variables importantes"""
+K = 6
+K_evaluation = load_variable_from_file("K_evaluation", "saved_variables")
+T = load_variable_from_file(f"texton_matrix_K_{K}", "saved_variables")
+windows_train = load_variable_from_file("training_windows", "saved_variables")
+windows_dev = load_variable_from_file("development_windows", "saved_variables")
+windows_test = load_variable_from_file("testing_windows", "saved_variables")
+training_set = load_variable_from_file("training_set_imgs", "saved_variables")
+development_set = load_variable_from_file("development_set_imgs", "saved_variables")
+test_set = load_variable_from_file("testing_set_imgs", "saved_variables")
+feature_vectors_of_label = load_variable_from_file("feature_vectors", "saved_variables")
+classes = np.array(["proeutectoid ferrite", "pearlite"])
+
+# %%
+"""Carga de las imágenes ground truth.
+
+Las imágenes segmentadas (ground truth) se guardan en un diccionario cuyas llaves son los
+nombres de las imágenes y los valores son las respectivas segmentaciones.
+"""
+ground_truth = model.load_ground_truth(
+    os.path.join(model.PATH_LABELED, "(Segmented)HypoeutectoidStack.tif"), classes
+)
+
+for key in ground_truth:
+    model.plot_image_with_ground_truth(key, ground_truth)
 
 # %%
 """Preprocesamiento
@@ -146,20 +173,10 @@ A continuación, se muestra una función que entrena el modelo, primero construy
 matriz de *feature vectors* para cada una de las clases, y luego haciendo un 
 *clustering* que aprenda los textones asociados a cada una de ellas.
 """
-K = 6
+K = 9
 filterbank = "MR8"
 feature_vectors_of_label, classes, T, _ = model.train(
-    K, windows_train, filterbank_name=filterbank
-)
-
-# %%
-"""Carga de las imágenes ground truth.
-
-Las imágenes segmentadas (ground truth) se guardan en un diccionario cuyas llaves son los
-nombres de las imágenes y los valores son las respectivas segmentaciones.
-"""
-ground_truth = model.load_ground_truth(
-    os.path.join(model.PATH_LABELED, "(Segmented)HypoeutectoidStack.tif"), classes
+    K, windows_train, windows_dev=windows_dev, filterbank_name=filterbank
 )
 
 # %%
@@ -176,17 +193,18 @@ y los valores a la clase a la que dicho superpíxel pertenece. El fundamento mat
 está basado en una decisión de clasificación colectiva de cada superpíxel basada en las
 ocurrencias de los textones más cercanos de todos los píxeles en el superpíxel.
 """
-test_img = "cs0368.png"
+test_img = "as0013.png"
+filterbank = "MR8"
 
 # algorithm = "SLIC"
 # algorithm_parameters = (500, 5, 0.17)
 algorithm = "felzenszwalb"
-algorithm_parameters = (200, 0.8, 200)
+algorithm_parameters = (100, 1.4, 100)
 # algorithm = "quickshift"
 # algorithm_parameters = (0.5, 5, 8, 0)
 # algorithm = "watershed"
 # algorithm_parameters = (250, 0.001)
-original_img, superpixels, segmentation = model.segment(
+original_img, superpixels, segmentation, class_matrix = model.segment(
     find_path_of_img(test_img, model.PATH_LABELED),
     classes,
     T,
@@ -199,12 +217,7 @@ original_img, superpixels, segmentation = model.segment(
 )
 
 model.visualize_segmentation(original_img, classes, superpixels, segmentation)
-
-# %%
-for test_img in ground_truth:
-    print(test_img)
-    model.plot_image_with_ground_truth(test_img, ground_truth, alpha=0.6)
-
+model.plot_image_with_ground_truth(test_img, ground_truth)
 
 # %%
 """Evaluación de rendimiento"""
@@ -230,6 +243,7 @@ for K in K_range:
 _set = "Train"
 stat = "Overall Accuracy"
 x_lim = [0, 20]
+K_range = list(range(1, 21)) + list(range(30, 210, 10))
 
 x = K_range
 y = [K_evaluation[i][_set]["Overall Statistics"][stat] for i in x]
@@ -240,7 +254,7 @@ highlight = (x_highlight, y[x.index(x_highlight)])
 plt.figure(figsize=(10, 8))
 y_max = max(y)
 pos = y.index(y_max)
-print(f"K = {K_range[pos]}")
+print(f"K = {x[pos]}")
 print(K_evaluation[K_range[pos]][_set]["Overall Statistics"][stat])
 if _set == "Train":
     title = "Training"
@@ -249,18 +263,18 @@ elif _set == "Dev":
 else:
     title = "Testing"
 plt.title(title)
-plt.scatter(x, y, color="k")
+plt.plot(x, y, color="k", linestyle="--", marker="o")
 plt.scatter(*highlight, color="r", s=100)
 x = np.array(x)
 plt.xlabel("K")
 plt.ylabel(stat)
-plt.grid(b=True, which='major', color='k', linestyle='--', alpha=0.2)
-plt.grid(b=True, which='minor', color='k', linestyle='--', alpha=0.1)
+plt.grid(b=True, which="major", color="k", linestyle="--", alpha=0.2)
+plt.grid(b=True, which="minor", color="k", linestyle="--", alpha=0.1)
 plt.xlim(x_lim)
-plt.xticks(x[:x.tolist().index(x_lim[1]) + 1])
+plt.xticks(x[: x.tolist().index(x_lim[1]) + 1])
 plt.minorticks_on()
 plt.tight_layout()
-plt.savefig(_set + f" changing K (to {x_lim[-1]}.png", dpi=300)
+plt.savefig(_set + f" changing K (to {x_lim[-1]}) ({stat}).png", dpi=300)
 plt.show()
 plt.close()
 
@@ -277,19 +291,324 @@ plt.close()
 # save_variable_to_file(feature_vectors_of_label, "feature_vectors", "saved_variables")
 
 # %%
-K_evaluation_2 = load_variable_from_file("K_evaluation", "saved_variables")
+# Rendimiento en segmentación
+# filterbank = "MR8"
+# algorithm = "felzenszwalb"
+# sp_evaluation = {}
+# for scale in range(50, 250, 50):
+#     for sigma in [2 * i / 10 for i in range(0, 8)]:
+#         for min_size in range(0, 250, 50):
+#             if scale == 50:
+#                 continue
+#             if scale == 100 and (sigma != 0.4 or min_size != 0):
+#                 continue
+
+#             print(f"\nCurrent: (scale={scale}, sigma={sigma}, min_size={min_size})")
+#             parameters = (scale, sigma, min_size)
+
+#             print("\n[+] On training...")
+#             sp_evaluation[parameters] = {}
+#             sp_evaluation[parameters][
+#                 "Train"
+#             ] = model.evaluate_segmentation_performance(
+#                 training_set,
+#                 ground_truth,
+#                 classes,
+#                 K,
+#                 T,
+#                 algorithm,
+#                 parameters,
+#                 filterbank_name=filterbank,
+#                 save_png=False,
+#                 save_xlsx=False,
+#                 png_title=f"Train (segm) (scale={scale}, sigma={sigma}, min_size={min_size})",
+#             )
+#             print("\n[+] On development...")
+#             sp_evaluation[parameters]["Dev"] = model.evaluate_segmentation_performance(
+#                 development_set,
+#                 ground_truth,
+#                 classes,
+#                 K,
+#                 T,
+#                 algorithm,
+#                 parameters,
+#                 filterbank_name=filterbank,
+#                 save_png=False,
+#                 save_xlsx=False,
+#                 png_title=f"Dev (segm) (scale={scale}, sigma={sigma}, min_size={min_size})",
+#             )
+#             print("\n[+] On testing...")
+#             sp_evaluation[parameters]["Test"] = model.evaluate_segmentation_performance(
+#                 test_set,
+#                 ground_truth,
+#                 classes,
+#                 K,
+#                 T,
+#                 algorithm,
+#                 parameters,
+#                 filterbank_name=filterbank,
+#                 save_png=False,
+#                 save_xlsx=False,
+#                 png_title=f"Test (segm) (scale={scale}, sigma={sigma}, min_size={min_size})",
+#             )
+#             print("[+] Presaving...")
+#             save_variable_to_file(
+#                 sp_evaluation, "sp_evaluation", "saved_variables", overwrite=True
+#             )
+
+#
+# print("[+] Final save...")
+# save_variable_to_file(sp_evaluation, "sp_evaluation", "saved_variables")
 
 # %%
-# Rendimiento en segmentación
-segmentation_metrics, jaccard_per_img = model.evaluate_segmentation_performance(
-    test_set[:2],
+sp_evaluation_long = load_variable_from_file(
+    "sp_evaluation_scale50_sigma_01-03_minsize_0-190", "saved_variables"
+)
+sp_evaluation = load_variable_from_file("sp_evaluation", "saved_variables")
+
+# %%
+stat = "Overall Accuracy"
+_set = "Dev"
+
+if _set == "Train":
+    title = "Training"
+elif _set == "Dev":
+    title = "Development"
+else:
+    title = "Testing"
+
+x = list(range(0, 250, 50))
+
+for stat in ["Micro Averaged Jaccard Index"]:
+    for _set in ["Test", "Train", "Dev"]:
+        if _set == "Train":
+            title = "Training"
+        elif _set == "Dev":
+            title = "Development"
+        else:
+            title = "Testing"
+        for scale in range(50, 250, 50):
+            plt.figure(figsize=(10, 8))
+            plt.title(title + f" (scale = {scale})")
+
+            for sigma in [2 * i / 10 for i in range(0, 8)]:
+                y = []
+                for min_size in x:
+                    stats, jaccard = sp_evaluation[(scale, sigma, min_size)][_set]
+                    if stat == "Micro Averaged Jaccard Index":
+                        import statistics
+
+                        micro_jaccard = []
+                        for key in jaccard:
+                            micro_jaccard.append(jaccard[key]["Micro"])
+
+                        y.append(statistics.harmonic_mean(micro_jaccard))
+                    else:
+                        y.append(stats["Overall Statistics"][stat])
+
+                plt.plot(x, y, linestyle="--", label=f"$\sigma$ = {sigma}")
+
+            plt.xlabel("min-size")
+            plt.ylabel(stat)
+            plt.grid(b=True, which="major", color="k", linestyle="--", alpha=0.2)
+            plt.grid(b=True, which="minor", color="k", linestyle="--", alpha=0.1)
+            plt.minorticks_on()
+            plt.tight_layout()
+            plt.legend()
+            plt.savefig(
+                f"{_set} changing sigma and min_size (scale = {scale}) ({stat})",
+                dpi=300,
+            )
+            plt.show()
+            plt.close()
+
+# %%
+"""Entrenamiento del modelo
+
+A continuación, se muestra una función que entrena el modelo, primero construyendo la 
+matriz de *feature vectors* para cada una de las clases, y luego haciendo un 
+*clustering* que aprenda los textones asociados a cada una de ellas.
+"""
+filterbank = "MR8"
+scale = 100
+sigma = 1.4
+min_size = 100
+K_evaluation_2 = {}
+feature_vectors_of_label = None
+for K in range(1, 20):
+    print(f"\nCurrent: (K = {K})")
+
+    feature_vectors_of_label, classes, T, _ = model.train(
+        K,
+        windows_train,
+        precomputed_feature_vectors=feature_vectors_of_label,
+        filterbank_name=filterbank,
+    )
+
+    parameters = (scale, sigma, min_size)
+
+    print("\n[+] On training...")
+    K_evaluation_2[K] = {}
+    K_evaluation_2[K]["Train"] = model.evaluate_segmentation_performance(
+        training_set,
+        ground_truth,
+        classes,
+        K,
+        T,
+        algorithm,
+        parameters,
+        filterbank_name=filterbank,
+        save_png=True,
+        save_xlsx=False,
+        png_title=f"Train (segm) (K = {K})",
+    )
+    print("\n[+] On development...")
+    K_evaluation_2[K]["Dev"] = model.evaluate_segmentation_performance(
+        development_set,
+        ground_truth,
+        classes,
+        K,
+        T,
+        algorithm,
+        parameters,
+        filterbank_name=filterbank,
+        save_png=True,
+        save_xlsx=False,
+        png_title=f"Dev (segm) (K = {K})",
+    )
+    print("\n[+] On testing...")
+    K_evaluation_2[K]["Test"] = model.evaluate_segmentation_performance(
+        test_set,
+        ground_truth,
+        classes,
+        K,
+        T,
+        algorithm,
+        parameters,
+        filterbank_name=filterbank,
+        save_png=True,
+        save_xlsx=False,
+        png_title=f"Test (segm) (K = {K})",
+    )
+
+# %%
+stat = "Overall Accuracy"
+_set = "Train"
+
+if _set == "Train":
+    title = "Training"
+elif _set == "Dev":
+    title = "Development"
+else:
+    title = "Testing"
+
+x = list(range(1, 20))
+
+for stat in ["F1 Macro", "Micro Averaged Jaccard Index"]:
+    for _set in ["Test", "Train", "Dev"]:
+        if _set == "Train":
+            title = "Training"
+        elif _set == "Dev":
+            title = "Development"
+        else:
+            title = "Testing"
+                        
+        plt.figure(figsize=(10, 8))
+        plt.title(title)
+        y = []
+        for K in range(1, 20):
+            stats, jaccard = K_evaluation_2[K][_set]
+            if stat == "Micro Averaged Jaccard Index":
+                import statistics
+
+                micro_jaccard = []
+                for key in jaccard:
+                    micro_jaccard.append(jaccard[key]["Micro"])
+
+                y.append(statistics.harmonic_mean(micro_jaccard))
+            else:
+                y.append(stats["Overall Statistics"][stat])
+
+        plt.plot(x, y, linestyle="--")
+
+        plt.xlabel("K")
+        plt.ylabel(stat)
+        plt.grid(b=True, which="major", color="k", linestyle="--", alpha=0.2)
+        plt.grid(b=True, which="minor", color="k", linestyle="--", alpha=0.1)
+        plt.minorticks_on()
+        plt.tight_layout()
+        plt.xticks(x)
+        plt.savefig(
+            f"{_set} changing K ({stat})", dpi=300,
+        )
+        plt.show()
+        plt.close()
+        
+# %%
+matplotlib.rcParams.update({"font.size": 16})
+
+K = 6
+filterbank = "MR8"
+scale = 100
+sigma = 1.4
+min_size = 100
+final_model = {}
+feature_vectors_of_label = None
+
+feature_vectors_of_label, classes, T, _ = model.train(
+    K,
+    windows_train,
+    windows_dev=windows_dev,
+    filterbank_name=filterbank,
+)
+
+parameters = (scale, sigma, min_size)
+
+print("\n[+] On training...")
+final_model["Train"] = model.evaluate_segmentation_performance(
+    training_set,
     ground_truth,
     classes,
     K,
     T,
     algorithm,
-    algorithm_parameters,
+    parameters,
     filterbank_name=filterbank,
     save_png=True,
-    save_xlsx=True,
+    save_xlsx=False,
+    png_title=f"Train (segm) (K = {K})",
 )
+print("\n[+] On development...")
+final_model["Dev"] = model.evaluate_segmentation_performance(
+    development_set,
+    ground_truth,
+    classes,
+    K,
+    T,
+    algorithm,
+    parameters,
+    filterbank_name=filterbank,
+    save_png=True,
+    save_xlsx=False,
+    png_title=f"Dev (segm) (K = {K})",
+)
+print("\n[+] On testing...")
+final_model["Test"] = model.evaluate_segmentation_performance(
+    test_set,
+    ground_truth,
+    classes,
+    K,
+    T,
+    algorithm,
+    parameters,
+    filterbank_name=filterbank,
+    save_png=True,
+    save_xlsx=False,
+    png_title=f"Test (segm) (K = {K})",
+)
+
+# %%
+save_variable_to_file(final_model, "final_model")
+save_variable_to_file(sp_evaluation, "sp_evaluation")
+# %%
+save_variable_to_file(T, "T_final", "saved_variables")
