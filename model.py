@@ -9,6 +9,7 @@ import warnings
 from collections import Counter
 from random import randint
 from itertools import chain
+from numba import jit
 import cv2
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -589,7 +590,7 @@ def train(
 
     return feature_vectors_of_label, classes, T, clustering_entropy
 
-
+@jit
 def get_closest_texton_vector(feature_vectors: np.ndarray, T: np.ndarray) -> np.ndarray:
     """Obtains a vector whose values are the minimum distances of each pixel of a
     superpixel. For example, if a superpixel has 300 pixels, this function returns a
@@ -608,7 +609,7 @@ def get_closest_texton_vector(feature_vectors: np.ndarray, T: np.ndarray) -> np.
     minimum_distance_vector = np.min(distance_matrix[np.newaxis], axis=(-1, 1))
     return minimum_distance_vector
 
-
+@jit
 def get_distance_matrix(feature_vectors: np.ndarray, T: np.ndarray) -> np.ndarray:
     """Obtains a matrix which has the information of all possible distances from a pixel of
     a superpixel to every texton of every class.
@@ -624,7 +625,7 @@ def get_distance_matrix(feature_vectors: np.ndarray, T: np.ndarray) -> np.ndarra
     """
     return np.linalg.norm(feature_vectors[:, np.newaxis] - T[:, np.newaxis, :], axis=-1)
 
-
+@jit
 def predict_class_of(
     feature_vectors: np.ndarray, classes: np.ndarray, T: np.ndarray
 ) -> str:
@@ -650,7 +651,7 @@ def predict_class_of(
     A_i = A.sum(axis=1)  # Sum over rows (i.e, over all pixels).
     ci = A_i.argmax(axis=0)  # Class with maximum probability of occurrence is chosen.
 
-    return classes[ci]  # Assigned class is returned.
+    return ci, classes[ci]  # Assigned class is returned.
 
 
 def segment(
@@ -681,7 +682,6 @@ def segment(
                                     a class to a superpixel are desired. Defaults to
                                     False.
     """
-
     def get_superpixels(segments: np.ndarray) -> dict:
         """Creates a dictionary whose key corresponds to a superpixel and its value
         is a list of tuples which represent the coordinates of pixels belonging
@@ -760,9 +760,15 @@ def segment(
 
     # The new segments are created, i.e, actual segmentation.
     S_segmented = {}
+    class_matrix = np.zeros(test_img.shape, dtype=int)
     for superpixel in S:
         current_feature_vectors = feature_vector_of(superpixel)
-        S_segmented[superpixel] = predict_class_of(current_feature_vectors, classes, T)
+        predicted_class_idx, S_segmented[superpixel] = predict_class_of(
+            current_feature_vectors, classes, T
+        )
+        idx = S[superpixel]
+        rows, cols = zip(*idx)
+        class_matrix[rows, cols] = predicted_class_idx
 
         if verbose:  # In case additional prints are desired.
             if superpixel % 25 == 0:
@@ -772,7 +778,7 @@ def segment(
                     + S_segmented[superpixel]
                 )
 
-    return test_img, S, S_segmented
+    return test_img, S, S_segmented, class_matrix
 
 
 def visualize_segmentation(
@@ -904,8 +910,9 @@ def classification_confusion_matrix(
             current_feature_vectors, _ = get_feature_vector_of_window(
                 window, ravel=True, filterbank_name=filterbank_name
             )
-            predicted_class = predict_class_of(current_feature_vectors, classes, T)
-            predicted_class_index = np.where(classes == predicted_class)[0][0]
+            predicted_class_index, predicted_class = predict_class_of(
+                current_feature_vectors, classes, T
+            )
             y_pred.append(predicted_class_index)
             y_true.append(i)
         if i == max_test_number:
@@ -1149,7 +1156,7 @@ def segmentation_metrics(
     jaccard_per_img = {}
     for k, name in enumerate(imgs):
         print(f"\t[?] Segmenting {name}... ", end="")
-        original_img, superpixels, segmented_img = segment(
+        original_img, superpixels, segmented_img, segmented_img_as_matrix = segment(
             find_path_of_img(name, src=src),
             classes,
             T,
@@ -1157,9 +1164,7 @@ def segmentation_metrics(
             algorithm_parameters,
             filterbank_name=filterbank_name,
         )
-        segmented_img_as_matrix = segmentation_to_class_matrix(
-            classes, superpixels, segmented_img, original_img.shape, as_int=True
-        )
+
         y_pred = segmented_img_as_matrix.ravel()
 
         print("Done")
@@ -1197,6 +1202,7 @@ def evaluate_segmentation_performance(
     save_xlsx: bool,
     dpi: int = 120,
     max_test_number: int = -1,
+    png_title: str = None
 ) -> None:
     """Evaluates the model's segmentation performance by creating the corresponding
     segmentation confusion matrices for training, development and test set (if they
@@ -1233,16 +1239,29 @@ def evaluate_segmentation_performance(
         filterbank_name=filterbank_name,
         max_test_number=max_test_number,
     )
-    print("Done")
-    # Maps integer classes to actual names of classes.
+    # Maps integers classes to actual names of classes.
     # Example: {'0': 'proeutectoid ferrite', '1': 'pearlite'}
-    integer_classes = [str(i) for i in range(len(classes))]
-    mapping = dict(zip(integer_classes, classes))
-    cm.relabel(mapping=mapping)
+    try:
+        integer_classes = [i for i in range(len(classes))]
+        mapping = dict(zip(integer_classes, classes))
+        cm.relabel(mapping=mapping)
+    except:
+        try:
+            integer_classes = [str(i) for i in range(len(classes))]
+            mapping = dict(zip(integer_classes, classes))
+            cm.relabel(mapping=mapping)
+        except:
+            pass
+
+    if png_title is not None:
+        title = png_title
+    else:
+        title = f"Confusion matrix (segmentation), K = {K}"
+        
     plot_confusion_matrix(
         cm,
         normalized=True,
-        title=f"Confusion matrix (segmentation), K = {K}",
+        title=title,
         dpi=dpi,
         save_png=save_png,
     )
@@ -1254,4 +1273,5 @@ def evaluate_segmentation_performance(
         print("Done")
     print(" > Computing metrics... ", end="")
     stats = statistics_from_matrix(cm)
+    print("Done\n")
     return stats, jaccard_per_img
