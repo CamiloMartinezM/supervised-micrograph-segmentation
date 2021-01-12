@@ -4,6 +4,7 @@ Created on Wed Nov 11 17:11:12 2020
 
 @author: Camilo Martínez
 """
+import cv2
 import itertools
 import pickle
 import os
@@ -185,7 +186,9 @@ def find_path_of_img(name: str, src: str, relative_path: bool = False) -> str:
     return None
 
 
-def print_table_from_dict(data: dict, cols: list, title: str = "") -> None:
+def print_table_from_dict(
+    data: dict, cols: list, title: str = "", format_as_percentage: list = None
+) -> None:
     """Prints a table from a dictionary.
 
     Args:
@@ -208,8 +211,23 @@ def print_table_from_dict(data: dict, cols: list, title: str = "") -> None:
         for label in sorted(data.keys(), key=lambda x: len(data[x]), reverse=True,):
             table.add_row([label, f"{len(data[label])}"])
     else:  # int
-        for label in sorted(data.keys(), key=lambda x: data[x], reverse=True,):
-            table.add_row([label, f"{data[label]}"])
+        for label in data.keys():
+            row = [label]
+            if type(data[label]) is dict:
+                for k, nested_label in enumerate(data[label]):
+                    if (
+                        format_as_percentage is not None
+                        and (k + 1) in format_as_percentage
+                    ):
+                        row.append("{:.2%}".format(data[label][nested_label]))
+                    else:
+                        row.append(f"{round(data[label][nested_label], 2)}")
+                table.add_row(row)
+            else:
+                if format_as_percentage is not None:
+                    table.add_row([label, "{:.2%}".format(data[label])])
+                else:
+                    table.add_row([label, f"{data[label]}"])
 
     print(table.get_string(title=title))
 
@@ -439,9 +457,9 @@ def save_variable_to_file(
                 print(new_filename + "... ")
                 i += 1
             print("[+] Done")
-        
+
             filename = new_filename
-    
+
     print(f"[+] Saving variable to {filename}... ", end="")
     with open(os.path.join(dst, filename), "wb") as f:
         pickle.dump(variable, f)
@@ -499,6 +517,123 @@ def jaccard_index_from_ground_truth(
             jaccard[key] = dict(zip(classes, jaccard[key]))
 
     return jaccard
+
+
+def img_to_binary(img: np.ndarray) -> np.ndarray:
+    """Converts an input image to binary.
+
+    Args:
+        img (np.ndarray): Input image.
+
+    Returns
+        np.ndarray: Binary image.
+    """
+    img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)  # Image as RGB
+    img[np.all(img == 255, axis=2)] = 0
+
+    kernel = np.array(
+        [[1, 1, 1], [1, -8, 1], [1, 1, 1]], dtype=np.float32
+    )  # Laplacian kernel
+    imgLaplacian = cv2.filter2D(img, cv2.CV_32F, kernel)
+    sharp = np.float32(img)
+    imgResult = sharp - imgLaplacian  # New sharped image
+    # Convert back to 8bits gray scale
+    imgResult = np.clip(imgResult, 0, 255)
+    imgResult = imgResult.astype("uint8")
+
+    # Binary image (every pixel is either a 0 or a 1)
+    bw = cv2.cvtColor(imgResult, cv2.COLOR_BGR2GRAY)
+    _, bw = cv2.threshold(bw, 40, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    cv2.normalize(bw, bw, 0, 1.0, cv2.NORM_MINMAX)
+
+    return bw
+
+
+def pixel_counts_to_volume_fraction(
+    pixel_counts: dict,
+    pixel_length_scale: int,
+    length_scale: int,
+    units: str = "µm",
+    img_size: tuple = (500, 500),
+) -> dict:
+    """Converts a dictionary of pixel counts to a dictionary of volume fractions, given the pixel
+    length scale and its equivalence in µm (or any other unit).
+
+    Args:
+        pixel_counts (dict): Dictionary of pixel counts, where each key is a label and its value is
+                             the number of pixels associated with that label.
+        pixel_length_scale (int): Scale length (present in any micrograph). Corresponds to the 
+                                  number of pixels the scale occupies in the image.
+        length_scale (int): Value in µm of the scale.
+        units (str, optional): Scale unit. Defaults to "µm".
+        img_size (tuple, optional): Image size. Defaults to (500, 500).
+
+    Returns
+        dict: Dictionary of volume fractions, where each key is a label and its value is its volume
+              fraction in µm² (or any other unit).
+
+    """
+    pixel_area_in_pixels = img_size[0] * img_size[1]
+    pixel_area_in_length_squared = (
+        pixel_area_in_pixels * ((1 / pixel_length_scale) * length_scale) ** 2
+    )
+    pixel_area = pixel_area_in_length_squared / pixel_area_in_pixels
+
+    volume_fraction = {}
+    for label, pixel_count in pixel_counts.items():
+        volume_fraction[label] = {
+            "volume fraction": pixel_count * pixel_area,
+            "percentage area": pixel_count / pixel_area_in_pixels,
+        }
+
+    return volume_fraction
+
+
+def highlight_class_in_img(
+    img: np.ndarray, mask: np.ndarray, class_: int, fill_value: int = 0
+) -> np.ndarray:
+    """Highlights a class in an image. The input mask corresponds to the image segmentation and the 
+    class_ is the label that will be highlighted. Thus, every pixel in img whose value in mask is
+    equal to class_ is preserved. Otherwise, its value is replaced by fill_value. 
+    
+    Example (class_ = 1, fill_value = 0):
+        
+        img = [[17, 0, 15, 19, 1, 12],
+               [11, 1, 25, 2, 13, 14],
+               [1, 26, 11, 1, 15, 16],
+               [14, 30, 1, 12, 13, 8],
+               [0, 15, 18, 14, 52, 7],
+               [0, 15, 18, 14, 52, 7]]
+        
+        mask = [[1, 0, 0, 0, 1, 1],
+                [1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1, 1],
+                [1, 1, 1, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0],
+                [1, 1, 1, 1, 1, 1]]
+        
+        result = [[17,  0,  0,  0,  1, 12],
+                  [11,  1, 25,  2, 13, 14],
+                  [ 1, 26, 11,  1, 15, 16],
+                  [14, 30,  1,  0,  0,  0],
+                  [ 0,  0,  0,  0,  0,  0],
+                  [ 0, 15, 18, 14, 52,  7]])
+
+
+    Args:
+        img (np.ndarray): Input image.
+        mask (np.ndarray): Segmented image.
+        class_ (int): Class to highlight.
+        fill_value (int): Value for unwanted pixels. Defaults to 0.
+
+    Returns
+        np.ndarray: Highlighted image.
+    """
+    result = img.copy()
+    result[mask != class_] = fill_value
+    result[mask == class_] = img[mask == class_]
+    return result
+
 
 def formatter(format_str, widths, *columns):
     """
