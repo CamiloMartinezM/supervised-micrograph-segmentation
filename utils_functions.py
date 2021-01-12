@@ -635,6 +635,22 @@ def highlight_class_in_img(
     return result
 
 
+def adjust_labels(segmentation_pixel_counts: dict) -> dict:
+    segmentation_pixel_counts["Proeutectoid ferrite"] = segmentation_pixel_counts[
+        "proeutectoid ferrite"
+    ]
+    del segmentation_pixel_counts["proeutectoid ferrite"]
+    segmentation_pixel_counts["Pearlite (ferrite + cementite)"] = (
+        segmentation_pixel_counts["pearlite"] + segmentation_pixel_counts["ferrite"]
+    )
+    segmentation_pixel_counts["> Ferrite"] = segmentation_pixel_counts["ferrite"]
+    del segmentation_pixel_counts["ferrite"]
+    segmentation_pixel_counts["> Cementite"] = segmentation_pixel_counts["pearlite"]
+    del segmentation_pixel_counts["pearlite"]
+    
+    return segmentation_pixel_counts
+
+
 def formatter(format_str, widths, *columns):
     """
     format_str describes the format of the report.
