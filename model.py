@@ -36,6 +36,8 @@ from utils_functions import (
     print_table_from_dict,
     statistics_from_matrix,
     jaccard_index_from_ground_truth,
+    highlight_class_in_img,
+    img_to_binary,
 )
 
 src = ""
@@ -590,6 +592,7 @@ def train(
 
     return feature_vectors_of_label, classes, T, clustering_entropy
 
+
 @jit
 def get_closest_texton_vector(feature_vectors: np.ndarray, T: np.ndarray) -> np.ndarray:
     """Obtains a vector whose values are the minimum distances of each pixel of a
@@ -609,6 +612,7 @@ def get_closest_texton_vector(feature_vectors: np.ndarray, T: np.ndarray) -> np.
     minimum_distance_vector = np.min(distance_matrix[np.newaxis], axis=(-1, 1))
     return minimum_distance_vector
 
+
 @jit
 def get_distance_matrix(feature_vectors: np.ndarray, T: np.ndarray) -> np.ndarray:
     """Obtains a matrix which has the information of all possible distances from a pixel of
@@ -624,6 +628,7 @@ def get_distance_matrix(feature_vectors: np.ndarray, T: np.ndarray) -> np.ndarra
                     the j-th class.
     """
     return np.linalg.norm(feature_vectors[:, np.newaxis] - T[:, np.newaxis, :], axis=-1)
+
 
 @jit
 def predict_class_of(
@@ -664,6 +669,7 @@ def segment(
     plot_original: bool = False,
     plot_superpixels: bool = False,
     verbose: bool = False,
+    subsegment_class: tuple = None,
 ) -> tuple:
     """Segments an image. The model must have been trained before.
 
@@ -682,6 +688,7 @@ def segment(
                                     a class to a superpixel are desired. Defaults to
                                     False.
     """
+
     def get_superpixels(segments: np.ndarray) -> dict:
         """Creates a dictionary whose key corresponds to a superpixel and its value
         is a list of tuples which represent the coordinates of pixels belonging
@@ -778,31 +785,85 @@ def segment(
                     + S_segmented[superpixel]
                 )
 
-    return test_img, S, S_segmented, class_matrix
+    if subsegment_class is not None:
+        class_to_subsegment, name_of_resulting_class = subsegment_class
+        # Check if the class to subsegment is present in the segmentation
+        if np.where(classes == class_to_subsegment)[0][0] in np.unique(class_matrix):
+            idx = np.where(classes == class_to_subsegment)[0][0]
+            mapping = {0: np.where(classes == class_to_subsegment)[0][0], 1: 2}
+            img_255 = load_img(img_name, as_255=True)  # Image is loaded.
+
+            class_matrix, new_classes = sub_segment(
+                img_255, class_matrix, idx, name_of_resulting_class, classes, mapping
+            )
+        else:
+            print(
+                f"{class_to_subsegment} was not found in segmentation, so it won't be subsegmented "
+                "into {name_of_resulting_class}"
+            )
+    else:
+        new_classes = classes.copy()
+        
+    _, pixel_counts = np.unique(class_matrix, return_counts=True)
+    segmentation_pixel_counts = dict(zip(new_classes, pixel_counts))
+    
+    return test_img, class_matrix, new_classes, segmentation_pixel_counts
+
+
+def sub_segment(
+    img: np.ndarray,
+    segments: np.ndarray,
+    class_to_subsegment: int,
+    name_of_resulting_class: str,
+    classes: np.ndarray,
+    binary_mapping: dict,
+) -> tuple:
+    """Subsegments a class of an input image. The resulting new class must be brighter than the
+    original class, which is subsegmented.
+
+    Args:
+        img (np.ndarray): Input image.
+        segments (np.ndarray): Class matrix; segmented array where each value corresponds to a
+                               class/label.
+        class_to_subsegment (int): Value in segments of the class which is going to be subsegmented.
+        name_of_resulting_class (str): Name of the resulting new class.
+        classes (np.ndarray): Array of classes/labels.
+        binary_mapping (dict): Tells which value in segments will correspond to which class.
+
+    Returns
+        tuple: new class matrix (or segments), and array of new classes/labels
+    """
+    subsegmented_img = highlight_class_in_img(
+        img_to_binary(img), segments, class_to_subsegment, fill_value=-1
+    )
+    new_segments = segments.copy()
+    for binary_value, corresponding_class in binary_mapping.items():
+        new_segments[subsegmented_img == binary_value] = corresponding_class
+
+    new_classes = classes.copy().tolist()
+    new_classes.append(name_of_resulting_class)
+
+    return new_segments, np.array(new_classes)
 
 
 def visualize_segmentation(
-    original_img: np.ndarray,
-    classes: np.ndarray,
-    S: dict,
-    S_segmented: dict,
-    dpi: int = 120,
+    original_img: np.ndarray, classes: np.ndarray, segments: np.ndarray, dpi: int = 120,
 ) -> None:
     """Plots a segmentation result on top of the original image.
 
     Args:
         original_img (np.ndarray): Numpy array associated with the original image.
         classes (np.ndarray): Array of classes/labels.
-        S (dict): Original dictionary of superpixels obtained from SLIC.
-        S_segmented (dict): Segmentation result.
+        segments (np.ndarray): Class matrix; segmented array where each value corresponds to a
+                               class/label.
         dpi (int, optional): DPI for plotted figure. Defaults to 120.
     """
-    present_classes = list(Counter(S_segmented.values()))
+    present_classes = np.unique(segments).tolist()
     C_p = len(present_classes)
 
     colour_names = [
-        "red",
         "blue",
+        "red",
         "yellow",
         "orange",
         "black",
@@ -818,14 +879,12 @@ def visualize_segmentation(
         for i, class_ in enumerate(present_classes)
     }
 
-    new_segments = np.zeros(original_img.shape, dtype=np.int16)
-    overlay = np.zeros((*original_img.shape, 3), dtype=float)
-    for superpixel in S:
-        for i, j in S[superpixel]:
-            new_segments[i, j] = np.where(classes == S_segmented[superpixel])[
-                0
-            ].flatten()
-            overlay[i, j] = colour_dict[classes[new_segments[i, j]]]
+    k = np.array(list(colour_dict.keys()))
+    v = np.array(list(colour_dict.values()))
+
+    mapping_ar = np.zeros((k.max() + 1, 3), dtype=v.dtype)
+    mapping_ar[k] = v
+    overlay = mapping_ar[segments]
 
     present_colours = [colour_dict[present_class] for present_class in present_classes]
     colours = mpl.colors.ListedColormap(present_colours)
@@ -833,10 +892,10 @@ def visualize_segmentation(
     norm = mpl.colors.BoundaryNorm(np.arange(C_p + 1) - 0.5, C_p)
 
     plt.figure(figsize=(9, 6), dpi=dpi)
-    plt.imshow(mark_boundaries(original_img, new_segments), cmap="gray")
-    plt.imshow(overlay, cmap=colours, norm=norm, alpha=0.5)
+    plt.imshow(mark_boundaries(original_img, segments), cmap="gray")
+    plt.imshow(overlay, cmap=colours, norm=norm, alpha=0.6)
     cb = plt.colorbar(ticks=np.arange(C_p))
-    cb.ax.set_yticklabels(present_classes)
+    cb.ax.set_yticklabels(classes)
 
     plt.tight_layout(w_pad=100)
     plt.axis("off")
@@ -1202,7 +1261,7 @@ def evaluate_segmentation_performance(
     save_xlsx: bool,
     dpi: int = 120,
     max_test_number: int = -1,
-    png_title: str = None
+    png_title: str = None,
 ) -> None:
     """Evaluates the model's segmentation performance by creating the corresponding
     segmentation confusion matrices for training, development and test set (if they
@@ -1257,13 +1316,9 @@ def evaluate_segmentation_performance(
         title = png_title
     else:
         title = f"Confusion matrix (segmentation), K = {K}"
-        
+
     plot_confusion_matrix(
-        cm,
-        normalized=True,
-        title=title,
-        dpi=dpi,
-        save_png=save_png,
+        cm, normalized=True, title=title, dpi=dpi, save_png=save_png,
     )
     if save_xlsx:
         print(" > Exporting to excel... ", end="")

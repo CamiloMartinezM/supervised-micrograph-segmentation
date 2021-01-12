@@ -17,12 +17,14 @@ from utils_functions import (
     train_dev_test_split_table,
     save_variable_to_file,
     load_variable_from_file,
+    pixel_counts_to_volume_fraction,
+    print_table_from_dict,
 )
 
 # Parámetros para las gráficas
 matplotlib.rcParams["font.family"] = "cmr10"
 matplotlib.rcParams["axes.unicode_minus"] = False
-matplotlib.rcParams.update({"font.size": 20})
+matplotlib.rcParams.update({"font.size": 16})
 
 print(f"\nPath to labeled micrographs: {model.PATH_LABELED}")
 print(f"Path to preprocessed micrographs: {model.PATH_PREPROCESSED}")
@@ -100,7 +102,7 @@ micrographs, index_to_name = model.load_imgs(exclude=["Low carbon"])
 
 # %%
 """Carga de las escalas"""
-# micrographs_scales = model.load_scales()
+micrographs_scales = model.load_scales()
 
 # %%
 """Textones
@@ -195,6 +197,7 @@ ocurrencias de los textones más cercanos de todos los píxeles en el superpíxe
 """
 test_img = "as0013.png"
 filterbank = "MR8"
+classes = np.array(["proeutectoid ferrite", "pearlite"])
 
 # algorithm = "SLIC"
 # algorithm_parameters = (500, 5, 0.17)
@@ -204,7 +207,7 @@ algorithm_parameters = (100, 1.4, 100)
 # algorithm_parameters = (0.5, 5, 8, 0)
 # algorithm = "watershed"
 # algorithm_parameters = (250, 0.001)
-original_img, superpixels, segmentation, class_matrix = model.segment(
+original_img, class_matrix, new_classes, segmentation_pixel_counts = model.segment(
     find_path_of_img(test_img, model.PATH_LABELED),
     classes,
     T,
@@ -214,11 +217,22 @@ original_img, superpixels, segmentation, class_matrix = model.segment(
     plot_original=True,
     plot_superpixels=True,
     verbose=True,
+    subsegment_class=("pearlite", "ferrite"),
 )
 
-model.visualize_segmentation(original_img, classes, superpixels, segmentation)
+model.visualize_segmentation(original_img, new_classes, class_matrix, dpi=80)
 model.plot_image_with_ground_truth(test_img, ground_truth)
 
+print_table_from_dict(
+    data=pixel_counts_to_volume_fraction(
+        segmentation_pixel_counts,
+        pixel_length_scale=micrographs_scales[test_img[:-4]],
+        length_scale=50,
+    ),
+    cols=["Phase or morphology", "Volume fraction [µm²]", "Percentage area [%]"],
+    title="",
+    format_as_percentage=[2],
+)
 # %%
 """Evaluación de rendimiento"""
 # Rendimiento en clasificación
@@ -512,7 +526,7 @@ for stat in ["F1 Macro", "Micro Averaged Jaccard Index"]:
             title = "Development"
         else:
             title = "Testing"
-                        
+
         plt.figure(figsize=(10, 8))
         plt.title(title)
         y = []
@@ -543,7 +557,7 @@ for stat in ["F1 Macro", "Micro Averaged Jaccard Index"]:
         )
         plt.show()
         plt.close()
-        
+
 # %%
 matplotlib.rcParams.update({"font.size": 16})
 
@@ -556,10 +570,7 @@ final_model = {}
 feature_vectors_of_label = None
 
 feature_vectors_of_label, classes, T, _ = model.train(
-    K,
-    windows_train,
-    windows_dev=windows_dev,
-    filterbank_name=filterbank,
+    K, windows_train, windows_dev=windows_dev, filterbank_name=filterbank,
 )
 
 parameters = (scale, sigma, min_size)
