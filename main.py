@@ -142,6 +142,9 @@ labels, windows, windows_per_name = model.extract_labeled_windows(
 )
 
 # %%
+model.save_labeled_imgs_to_pdf(windows_per_name, classes, micrographs, index_to_name)
+
+# %%
 """Train/dev/test split
 
 Estas imágenes fueron subdividas en conjuntos de datos para entrenamiento, validación y 
@@ -196,7 +199,7 @@ y los valores a la clase a la que dicho superpíxel pertenece. El fundamento mat
 está basado en una decisión de clasificación colectiva de cada superpíxel basada en las
 ocurrencias de los textones más cercanos de todos los píxeles en el superpíxel.
 """
-test_img = "cs0300.png"
+test_img = "as0014.png"
 filterbank = "MR8"
 classes = np.array(["proeutectoid ferrite", "pearlite"])
 
@@ -221,7 +224,7 @@ original_img, class_matrix, new_classes, segmentation_pixel_counts = model.segme
     subsegment_class=("pearlite", "ferrite"),
 )
 
-model.visualize_segmentation(original_img, new_classes, class_matrix, dpi=80)
+model.visualize_segmentation(original_img, new_classes, class_matrix, dpi=80, save_png=True, png_name="Segmented " + test_img)
 model.plot_image_with_ground_truth(test_img, ground_truth)
 
 segmentation_pixel_counts = adjust_labels(segmentation_pixel_counts)
@@ -230,7 +233,7 @@ print_table_from_dict(
     data=pixel_counts_to_volume_fraction(
         segmentation_pixel_counts,
         pixel_length_scale=micrographs_scales[test_img[:-4]],
-        length_scale=25,
+        length_scale=50
     ),
     cols=["Phase or morphology", "Volume fraction [µm²]", "Percentage area [%]"],
     title="",

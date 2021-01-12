@@ -24,7 +24,9 @@ from sklearn.cluster import MiniBatchKMeans
 
 from utils_classes import FilterBank, Scaler, SuperpixelSegmentation
 
-warnings.simplefilter("ignore", category=NumbaWarning)
+import json
+
+from matplotlib.backends.backend_pdf import PdfPages
 
 from utils_functions import (
     find_path_of_img,
@@ -38,7 +40,10 @@ from utils_functions import (
     jaccard_index_from_ground_truth,
     highlight_class_in_img,
     img_to_binary,
+    formatter,
 )
+
+warnings.simplefilter("ignore", category=NumbaWarning)
 
 src = ""
 
@@ -803,10 +808,10 @@ def segment(
             )
     else:
         new_classes = classes.copy()
-        
+
     _, pixel_counts = np.unique(class_matrix, return_counts=True)
     segmentation_pixel_counts = dict(zip(new_classes, pixel_counts))
-    
+
     return test_img, class_matrix, new_classes, segmentation_pixel_counts
 
 
@@ -847,7 +852,12 @@ def sub_segment(
 
 
 def visualize_segmentation(
-    original_img: np.ndarray, classes: np.ndarray, segments: np.ndarray, dpi: int = 120,
+    original_img: np.ndarray,
+    classes: np.ndarray,
+    segments: np.ndarray,
+    dpi: int = 120,
+    save_png: bool = False,
+    png_name: str = "segmentation.png",
 ) -> None:
     """Plots a segmentation result on top of the original image.
 
@@ -899,6 +909,9 @@ def visualize_segmentation(
 
     plt.tight_layout(w_pad=100)
     plt.axis("off")
+    if save_png:
+        plt.savefig(png_name, bbox_inches=0, dpi=dpi)
+
     plt.show()
     plt.close()
 
@@ -1330,3 +1343,97 @@ def evaluate_segmentation_performance(
     stats = statistics_from_matrix(cm)
     print("Done\n")
     return stats, jaccard_per_img
+
+
+def save_labeled_imgs_to_pdf(
+    windows_per_name: dict, classes: np.ndarray, micrographs: dict, index_to_name: dict
+) -> None:
+    widths = [30, 140]
+    form = "{row[0]:<{width[0]}} {row[1]:<{width[1]}}"
+
+    wanted_titles = [
+        "Material name",
+        "Material type",
+        "Composition",
+        "Condition",
+        "Condition details",
+        "Description",
+    ]
+
+    data = {}
+    with open("data.json", "r") as f:
+        data = json.load(f)
+
+    color_names = [
+        "red",
+        "blue",
+        "yellow",
+        "orange",
+        "darkkhaki",
+        "purple",
+        "green",
+        "turquoise",
+        "darkred",
+        "dodgerblue",
+        "magenta",
+        "fuchsia",
+    ]
+
+    colors = {
+        class_: mpl.colors.to_rgb(color_names[i]) for i, class_ in enumerate(classes)
+    }
+
+    colors_255 = colors.copy()
+    for label in colors_255:
+        colors_255[label] = tuple(255 * np.array(colors_255[label]))
+        colors_255[label] = [int(value) for value in colors_255[label]]
+
+    with PdfPages("foo.pdf") as pdf:
+        for name in windows_per_name:
+            print(f"[+] Saving {name}... ", end="")
+            gray_img = get_array_of_micrograph(name, micrographs, index_to_name)
+            img = cv2.cvtColor(gray_img, cv2.COLOR_GRAY2RGB)
+            present_labels = []
+            for coords, _, label in windows_per_name[name]:
+                top_left = coords[0]
+                bottom_right = coords[1]
+                cv2.rectangle(img, top_left, bottom_right, colors_255[label], 2)
+                if label not in present_labels:
+                    present_labels.append(label)
+
+            fig, ax = plt.subplots(1, figsize=(15, 10))
+
+            present_colors = [colors[present_label] for present_label in present_labels]
+            C_p = len(present_labels)
+            cmap = mpl.colors.ListedColormap(present_colors)
+            bounds = np.arange(C_p + 1) - 0.5
+            norm = mpl.colors.BoundaryNorm(bounds, cmap.N)
+
+            t = ax.imshow(img, cmap=cmap, norm=norm)
+            cb = fig.colorbar(t, ticks=np.arange(C_p))
+            cb.ax.set_yticklabels(present_labels)
+
+            pad = 18
+            x = -0.95
+            y = -0.55
+            fontsize = 11
+
+            fig.tight_layout()#pad=pad)
+
+            titles = [title for title in wanted_titles if title in data[name[:-4]]]
+
+            blobs = [data[name[:-4]][title] for title in titles]
+            ax.text(
+                x,
+                y,
+                formatter(form, widths, titles, blobs),
+                fontsize=fontsize,
+                transform=ax.transAxes,
+            )
+            ax.set_title(name[:-4] + ", " + data[name[:-4]]["Material name"])
+            ax.axis("off")
+
+            print("Done")
+            # plt.show()
+            pdf.savefig(fig, bbox_inches=0, dpi=500)
+            plt.close()
