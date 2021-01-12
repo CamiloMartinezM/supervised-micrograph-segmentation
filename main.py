@@ -19,6 +19,7 @@ from utils_functions import (
     load_variable_from_file,
     pixel_counts_to_volume_fraction,
     print_table_from_dict,
+    adjust_labels
 )
 
 # Parámetros para las gráficas
@@ -33,7 +34,7 @@ print(f"Path to preprocessed micrographs: {model.PATH_PREPROCESSED}")
 """Carga de variables importantes"""
 K = 6
 K_evaluation = load_variable_from_file("K_evaluation", "saved_variables")
-T = load_variable_from_file(f"texton_matrix_K_{K}", "saved_variables")
+T = load_variable_from_file(f"texton_matrix_K_{K}_final", "saved_variables")
 windows_train = load_variable_from_file("training_windows", "saved_variables")
 windows_dev = load_variable_from_file("development_windows", "saved_variables")
 windows_test = load_variable_from_file("testing_windows", "saved_variables")
@@ -195,7 +196,7 @@ y los valores a la clase a la que dicho superpíxel pertenece. El fundamento mat
 está basado en una decisión de clasificación colectiva de cada superpíxel basada en las
 ocurrencias de los textones más cercanos de todos los píxeles en el superpíxel.
 """
-test_img = "as0013.png"
+test_img = "cs0300.png"
 filterbank = "MR8"
 classes = np.array(["proeutectoid ferrite", "pearlite"])
 
@@ -223,11 +224,13 @@ original_img, class_matrix, new_classes, segmentation_pixel_counts = model.segme
 model.visualize_segmentation(original_img, new_classes, class_matrix, dpi=80)
 model.plot_image_with_ground_truth(test_img, ground_truth)
 
+segmentation_pixel_counts = adjust_labels(segmentation_pixel_counts)
+
 print_table_from_dict(
     data=pixel_counts_to_volume_fraction(
         segmentation_pixel_counts,
         pixel_length_scale=micrographs_scales[test_img[:-4]],
-        length_scale=50,
+        length_scale=25,
     ),
     cols=["Phase or morphology", "Volume fraction [µm²]", "Percentage area [%]"],
     title="",
