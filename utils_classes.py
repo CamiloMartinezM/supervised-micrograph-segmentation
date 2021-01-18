@@ -11,27 +11,27 @@ import matplotlib.cm
 import matplotlib.pyplot as plt
 import numpy as np
 from joblib import Parallel, delayed
+from scipy.io import loadmat
 from scipy.ndimage import convolve
 from scipy.signal import fftconvolve
-from scipy.io import loadmat
+from skimage.filters import sobel
 from skimage.segmentation import (
-    mark_boundaries,
-    slic,
     felzenszwalb,
+    mark_boundaries,
     quickshift,
+    slic,
     watershed,
 )
-from skimage.filters import sobel
 
-from utils_functions import get_folder, load_img, find_path_of_img
+from utils_functions import find_path_of_img, get_folder, load_img
 
 
 class Scaler:
-    """For each of the micrographs there is a scale to which is associated a calibration 
-    line (which naturally has a length in pixels) and a real length in micrometers. The 
-    following class obtains a dictionary of 'scales', with keys that are the names of 
-    each micrograph and the value is the corresponding length of the scale in pixels. 
-    Thus, this class contains the information regarding the scale of every micrograph 
+    """For each of the micrographs there is a scale to which is associated a calibration
+    line (which naturally has a length in pixels) and a real length in micrometers. The
+    following class obtains a dictionary of 'scales', with keys that are the names of
+    each micrograph and the value is the corresponding length of the scale in pixels.
+    Thus, this class contains the information regarding the scale of every micrograph
     in LABELED.
     """
 
@@ -46,7 +46,7 @@ class Scaler:
         Args:
             startpath (str): Directory where labeled micrographs lie.
             split_in_half (bool, optional): If True, the algorithm will split the image
-                                            in 2 by its width to speed up the process. 
+                                            in 2 by its width to speed up the process.
                                             Defaults to True.
             minimum_zeros_check (int, optional): Minimum zeroes to consider a line to be
                                                  the actual scale. Defaults to 100.
@@ -146,7 +146,11 @@ class Scaler:
 class SuperpixelSegmentation:
     """Superpixel algorithm implementation with the library skimage."""
 
-    def __init__(self, algorithm: str, parameters: tuple,) -> None:
+    def __init__(
+        self,
+        algorithm: str,
+        parameters: tuple,
+    ) -> None:
         """
         # Args:
             n_segments (int, optional): Approximate number of superpixels to create.
@@ -387,7 +391,7 @@ class FilterBank:
 
 
 class MultiscaleStatistics:
-    """This class generates the feature vectors of an image based on multiscale 
+    """This class generates the feature vectors of an image based on multiscale
     statistics in a procedure described in G. Impoco, L. Tuminello, N. Fucà, M. Caccamo,
     G. Licitra,
     Segmentation of structural features in cheese micrographs using pixel statistics,
@@ -402,10 +406,10 @@ class MultiscaleStatistics:
     def __init__(self, scales: int = 3):
         """
         Args:
-            scales (int, optional): Number of scales to consider. Each scale represents 
-                                    a neighborhood around a pixel. The first scale is 
-                                    the inmediate neighborhood of a pixel, the second 
-                                    one is the neighborhood around the previous one and 
+            scales (int, optional): Number of scales to consider. Each scale represents
+                                    a neighborhood around a pixel. The first scale is
+                                    the inmediate neighborhood of a pixel, the second
+                                    one is the neighborhood around the previous one and
                                     so on. Defaults to 3.
         """
         self.scales = scales
@@ -422,7 +426,7 @@ class MultiscaleStatistics:
             scales (int, optional): Number of scales to consider. Defaults to 3.
 
         Returns:
-            np.ndarray: Feature vectors of the input image of shape 
+            np.ndarray: Feature vectors of the input image of shape
                         (*img.shape, 4*3*scales).
         """
         directions = 4

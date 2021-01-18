@@ -4,21 +4,25 @@ Created on Wed Nov 11 17:11:12 2020
 
 @author: Camilo Martínez
 """
-import cv2
 import itertools
-import pickle
+import math
 import os
+import pickle
 import random
 import textwrap
 from pprint import pprint
-import pycm
+
 import cudf
+import cv2
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pycm
+from numpy.fft import fft2, fftshift
 from openpyxl import load_workbook
 from prettytable import PrettyTable
+from scipy.optimize import curve_fit
 from skimage import color, io
 from sklearn.metrics import jaccard_score
 
@@ -29,15 +33,15 @@ def train_dev_test_split(
     """Splits the given data into three sets (train, development and test set).
 
     Args:
-        data (dict): Complete dataset as a dictionary whose keys are labels and values 
-                     are the corresponding annotated image windows as numpy arrays. 
+        data (dict): Complete dataset as a dictionary whose keys are labels and values
+                     are the corresponding annotated image windows as numpy arrays.
                      Values are of the form (filename, window).
         train_size (float): Percentage of the dataset that will be used as training set.
-        dev_size (float): Percentage of the dataset that will be used as development 
+        dev_size (float): Percentage of the dataset that will be used as development
                           set.
 
     Returns:
-        tuple: Train, dev and test sets as dictionaries of the same structure as the 
+        tuple: Train, dev and test sets as dictionaries of the same structure as the
                given dataset.
 
     """
@@ -205,10 +209,18 @@ def print_table_from_dict(
     characteristic_value = list(data.values())[0]
 
     if type(characteristic_value) is np.ndarray:
-        for label in sorted(data.keys(), key=lambda x: data[x].shape[0], reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: data[x].shape[0],
+            reverse=True,
+        ):
             table.add_row([label, f"{data[label].shape}"])
     elif type(characteristic_value) is list:
-        for label in sorted(data.keys(), key=lambda x: len(data[x]), reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: len(data[x]),
+            reverse=True,
+        ):
             table.add_row([label, f"{len(data[label])}"])
     else:  # int
         for label in data.keys():
@@ -274,10 +286,10 @@ def plot_confusion_matrix(
     Args:
         matrix (pycm.ConfusionMatrix): Pycm confusion matrix object.
                              are predicted classes.
-        title (str, optional): Distinguishable title to add to the name of the file 
+        title (str, optional): Distinguishable title to add to the name of the file
                                to which the plot would be saved. Defaults to None.
         dpi (int, optional): DPI of plot. Defaults to 120.
-        save_png (bool, optional): Specifies whether to save the figure in the current 
+        save_png (bool, optional): Specifies whether to save the figure in the current
                                     directory or not. Defaults to True.
                                     to True.
     """
@@ -324,14 +336,14 @@ def matrix_to_excel(
     path: str = os.getcwd(),
     filename: str = "Test",
 ) -> None:
-    """Exports a square matrix to an excel file. If a file with the given name already 
+    """Exports a square matrix to an excel file. If a file with the given name already
     exists, a new sheetname is added and the file is not overwritten.
 
     Args:
         matrix (np.ndarray): Data as a matrix.
         cols (list): Labels of each row and column of the given matrix.
         sheetname (str): Sheetname.
-        path (str, optional): Specifies where to put the excel file. Defaults to 
+        path (str, optional): Specifies where to put the excel file. Defaults to
                               os.getcwd().
         filename (str, optional): Excel filename. Defaults to "Test".
     """
@@ -426,9 +438,9 @@ def save_variable_to_file(
 
     Args:
         variable (object): Variable to save to file. It can be of any type.
-        name (str): Name of variable, which will be used as the filename for the 
+        name (str): Name of variable, which will be used as the filename for the
                     .pickle file.
-        dst (str, optional): Destination of file (folder). Defaults to current 
+        dst (str, optional): Destination of file (folder). Defaults to current
                              directory.
     """
     filename = name + ".pickle"
@@ -472,7 +484,7 @@ def load_variable_from_file(filename: str, src: str) -> object:
     Args:
         filename (str): Name of .pickle file.
         src (str, optional): Source of file (folder). Defaults to current directory.
-        
+
     Returns:
         object: Loaded variable.
     """
@@ -486,7 +498,9 @@ def load_variable_from_file(filename: str, src: str) -> object:
 
 
 def jaccard_index_from_ground_truth(
-    segmented: np.ndarray, ground_truth: np.ndarray, classes: np.ndarray,
+    segmented: np.ndarray,
+    ground_truth: np.ndarray,
+    classes: np.ndarray,
 ) -> float:
     """Calculates the Jaccard index of a segmented image with its corresponding ground
     truth image.
@@ -508,7 +522,9 @@ def jaccard_index_from_ground_truth(
 
         try:
             jaccard[key] = jaccard_score(
-                segmented.flatten(), ground_truth.flatten(), average=average_type,
+                segmented.flatten(),
+                ground_truth.flatten(),
+                average=average_type,
             )
         except:
             continue
@@ -562,7 +578,7 @@ def pixel_counts_to_volume_fraction(
     Args:
         pixel_counts (dict): Dictionary of pixel counts, where each key is a label and its value is
                              the number of pixels associated with that label.
-        pixel_length_scale (int): Scale length (present in any micrograph). Corresponds to the 
+        pixel_length_scale (int): Scale length (present in any micrograph). Corresponds to the
                                   number of pixels the scale occupies in the image.
         length_scale (int): Value in µm of the scale.
         units (str, optional): Scale unit. Defaults to "µm".
@@ -592,26 +608,26 @@ def pixel_counts_to_volume_fraction(
 def highlight_class_in_img(
     img: np.ndarray, mask: np.ndarray, class_: int, fill_value: int = 0
 ) -> np.ndarray:
-    """Highlights a class in an image. The input mask corresponds to the image segmentation and the 
+    """Highlights a class in an image. The input mask corresponds to the image segmentation and the
     class_ is the label that will be highlighted. Thus, every pixel in img whose value in mask is
-    equal to class_ is preserved. Otherwise, its value is replaced by fill_value. 
-    
+    equal to class_ is preserved. Otherwise, its value is replaced by fill_value.
+
     Example (class_ = 1, fill_value = 0):
-        
+
         img = [[17, 0, 15, 19, 1, 12],
                [11, 1, 25, 2, 13, 14],
                [1, 26, 11, 1, 15, 16],
                [14, 30, 1, 12, 13, 8],
                [0, 15, 18, 14, 52, 7],
                [0, 15, 18, 14, 52, 7]]
-        
+
         mask = [[1, 0, 0, 0, 1, 1],
                 [1, 1, 1, 1, 1, 1],
                 [1, 1, 1, 1, 1, 1],
                 [1, 1, 1, 0, 0, 0],
                 [0, 0, 0, 0, 0, 0],
                 [1, 1, 1, 1, 1, 1]]
-        
+
         result = [[17,  0,  0,  0,  1, 12],
                   [11,  1, 25,  2, 13, 14],
                   [ 1, 26, 11,  1, 15, 16],
@@ -636,6 +652,15 @@ def highlight_class_in_img(
 
 
 def adjust_labels(segmentation_pixel_counts: dict) -> dict:
+    """Label adjustment to improve Pretty Table.
+
+    Args:
+        segmentation_pixel_counts (dict): Dictionary of labels and their 
+                                          corresponding pixel counts.
+
+    Returns:
+        dict: Adjusted dictionary of pixel counts.
+    """
     segmentation_pixel_counts["Proeutectoid ferrite"] = segmentation_pixel_counts[
         "proeutectoid ferrite"
     ]
@@ -647,8 +672,216 @@ def adjust_labels(segmentation_pixel_counts: dict) -> dict:
     del segmentation_pixel_counts["ferrite"]
     segmentation_pixel_counts["> Cementite"] = segmentation_pixel_counts["pearlite"]
     del segmentation_pixel_counts["pearlite"]
-    
+
     return segmentation_pixel_counts
+
+
+def maxk(array: np.ndarray, k: int) -> tuple:
+    """Obtains the k maximum elements in the input array. This simulates the
+    maxk function in MatLab.
+
+    Args:
+        array (np.ndarray): Input array.
+        k (int): Number of maximum elements to return.
+
+    Returns:
+        tuple: Indexes of maximum elements, maximum elements.
+    """
+    idxs_if_sorted = np.argsort(array)
+    idxs_of_interest = idxs_if_sorted[-1 : -1 * k - 1 : -1]
+    vals_of_interest = array[idxs_of_interest]
+    return idxs_of_interest, vals_of_interest
+
+
+def mink(array: np.ndarray, k: int) -> tuple:
+    """Obtains the k minimum elements in the input array. This simulates the
+    mink function in MatLab.
+
+    Args:
+        array (np.ndarray): Input array.
+        k (int): Number of minimum elements to return.
+
+    Returns:
+        tuple: Indexes of minimum elements, minimum elements.
+    """
+    idxs_if_sorted = np.argsort(array)
+    idxs_of_interest = idxs_if_sorted[:k]
+    vals_of_interest = array[idxs_of_interest]
+    return idxs_of_interest, vals_of_interest
+
+
+def gauss_fit(x: np.ndarray, a: float, b: float, c: float) -> np.ndarray:
+    """Evaluates the gauss function on the input array.
+
+    Args:
+        x (np.ndarray): Input array.
+        a (float): 1st parameter.
+        b (float): 2nd parameter. Also known as x0.
+        c (float): 3rd parameter.
+
+    Returns:
+        np.ndarray: Gauss response.
+    """
+    return a * np.exp(-(((x - b) / c) ** 2))
+
+
+def peakpos(X: np.ndarray, Y: np.ndarray) -> tuple:
+    """Obtains the information regarding the gauss fit between input X, Y, such as
+    the peak position, curve parameters and full-width at 50% maximum.
+
+    Args:
+        X (np.ndarray): x values.
+        Y (np.ndarray): y values.
+
+    Returns:
+        tuple: peak position, gauss fit parameters and full width at 50% maximum.
+    """
+    # Gaussian fit on the whole X domain
+    # Gaussian curve: Y = a1*exp(-((X-b1)/c1)^2)
+    Ymax, imax = np.max(Y), np.argmax(Y)
+
+    popt, _ = curve_fit(gauss_fit, X, Y, p0=[Ymax, X[imax], 0.5 * X[imax]], maxfev=1000)
+    a, b, c = popt
+
+    # hereafter, only the upper half of the Gaussian peak is considered
+    # CutOff50 is the value of (X-b1)/c1 corresponding to the point Y=0.5*a1 of the Gaussian curve
+    CutOff50 = (np.log(1 / 0.5)) ** 0.5
+
+    # final result: peak position and full-width-at-50%-maximum
+    fw50m = c * 2 * CutOff50
+    return b, popt, fw50m
+
+
+def calculate_spacing(
+    I: np.ndarray, img_name: str = "img", save_plots: bool = False, dpi: int = 120
+) -> tuple:
+    """Calculates the spacing between lamellae in an input image.
+
+    Args:
+        I (np.ndarray): Input image as a numpy array.
+        img_name (str, optional): Image name; useful to name generated plots. Defaults to "img".
+        save_plots (bool, optional): True if plots are to be saved. Defaults to False.
+        dpi (int, optional): DPI of generated plots. Defaults to 120.
+
+    Returns:
+        tuple: Spacing obtained from method 1, spacing obtained from method 2.
+    """
+    output1 = img_name + "_dft.png"
+    output2 = img_name + "_res.png"
+
+    # get the size MxN of the investigated picture I
+    M, N = I.shape
+
+    # DFT Calculation and magnitude
+
+    # F is the centered discrete Fourier transform (DFT) of I
+    F = fftshift(fft2(I))
+    # F now becomes the magnitude of the DF
+    F = abs(F)
+
+    # plot and save F for visual examination
+    # use a logarithmic scale; the maximum value (= the sum of I) is out of scale
+    _, Fmax = maxk(F.flatten(), 2)
+    Fmin = F.min()
+    dF = (255 * np.log(F / Fmin) / np.log(Fmax[-1] / Fmin)).astype(np.uint8)
+
+    if save_plots:
+        cv2.imwrite(output1, dF)
+
+    # Calculate and subtract the background of F
+
+    # Calculate the histogram of the smaller 99.9 % elements of F, by using ((M*N)^0.5)/4) levels
+    # (neglect the very high and rare values, such as F(0,0), which would make binning difficult)
+    _, xdata = mink(F.flatten(), math.floor(M * N * 0.999))
+    [Hist, Edges] = np.histogram(xdata, bins=math.floor(((M * N) ** 0.5) / 4))
+    Values = (Edges[1:] - (Edges[1] + Edges[0]) / 2).astype(np.int32)
+
+    # find the maximum of the histogram and the corresponding level
+    # this is the most common level in F and therefore it is the background
+    background, _, fw50m = peakpos(Values, Hist)
+
+    F = F - background
+
+    # Calculate the total wavenumber Wn and the linear index n
+
+    # u is the first index (or discrete coordinate) of the Fourier transform
+    if M % 2 == 0:  # one column
+        u = np.arange(-(M / 2), (M / 2), 1).reshape(-1, 1)  # if N is even
+    else:
+        u = np.arange(-(M - 1) / 2, (M - 1) / 2 + 1, 1).reshape(-1, 1)  # if N is odd
+
+    u = u * np.ones((1, N))  # all columns
+
+    # v is the second index (or discrete coordinate) of the Fourier transform
+    if N % 2 == 0:  # one row
+        v = np.arange(-(N / 2), (N / 2), 1).reshape(1, -1)  # if M is even
+    else:
+        v = np.arange(-(N - 1) / 2, (N - 1) / 2 + 1, 1).reshape(1, -1)  # if M is odd
+
+    v = np.ones((M, 1)) * v  #  all rows
+
+    # W is the wavenumber of each point of the Fourier transform
+    W = ((u / M) ** 2 + (v / N) ** 2) ** 0.5
+
+    # n is the linear index, proportional to the wavenumber of each point of the Fourier transform
+    n = (((M * N) ** 0.5) * W).astype(np.uint16)
+
+    # nmax is the greatest wavenumber index listed in n
+    nmax = n.max()
+
+    # Wn is the vector of wavenumbers corresponding to the indexes given in n
+    Wn = np.arange(0, nmax + 1, 1).astype(np.float32) / ((M * N) ** 0.5)
+
+    # Calculate the total spectral magnitude vs. wavenumber curve
+
+    # calculate the total spectral magnitude, Fn, of the Fourier transform for a given wavenumber
+    # = the sum of the magnitude of each set of points of the Fourier transform, which have the same linear index n
+    Fn = np.zeros((nmax + 1,))
+    ravel_n = n.ravel()
+    ravel_F = F.ravel()
+    for i in range(n.shape[0] * n.shape[1]):
+        if ravel_n[i] > 0:
+            Fn[ravel_n[i]] = Fn[ravel_n[i]] + ravel_F[i]
+
+    # find the peak of the Fn curve
+    WnMax, curve_parameters, fw50m = peakpos(Wn, Fn)
+
+    # Plot the total spectral magnitude vs. wavenumber curve
+    if save_plots:
+        X = np.arange(WnMax - (fw50m / 2), WnMax + (fw50m / 2), fw50m / 200)
+        Y = gauss_fit(X, *curve_parameters)
+        plt.figure(figsize=(10, 8))
+        plt.plot(
+            Wn.T, Fn, "k", X, Y, "r", [WnMax, WnMax], np.array([0, 1.2]) * max(Y), "b"
+        )
+        plt.axis([0, 0.75, 0, 7e7])
+        plt.xlabel("Wavenumber [px^{-1}]")
+        plt.ylabel("Total spectral magnitude [a.u.]")
+        plt.legend(("Spectral magnitude", "Peak fitting curve", "Peak position"))
+        plt.tight_layout(pad=2)
+        plt.savefig(output2, bbox_inches=0, dpi=dpi)
+        # plt.show()
+        plt.close()
+
+    # Calculate the pearlite spacing (1st method)
+
+    # calculate the  wavelength corresponding to the peak of the total spectral magnitude vs. wavelength curve
+    spacing1 = 1 / WnMax
+
+    # Calculate the pearlite spacing (2nd method)
+
+    # the wavenumber is calculated as the mean of the points of W which are
+    # close to WnMax (within +/-fw50m/2), weighted over their spectral magnitude F
+    # determine which points should be used (also exclude W=0, i.e. the continuous component)
+    Use = (W > 0) * (W > WnMax - (fw50m / 2)) * (W < WnMax + (fw50m / 2))
+
+    # calculate the mean wavenumber weighted over the spectral magnitude
+    Wmean = np.sum(W * F * Use) / np.sum(F * Use)
+
+    # calculate the corresponding wavelength
+    spacing2 = 1 / Wmean
+
+    return spacing1, spacing2
 
 
 def formatter(format_str, widths, *columns):
@@ -660,7 +893,7 @@ def formatter(format_str, widths, *columns):
     {width[i]} is replaced by the ith element of the list widths.
 
     All the power of Python's string format spec is available for you to use
-    in format_str. You can use it to define fill characters, alignment, width, 
+    in format_str. You can use it to define fill characters, alignment, width,
     type, etc.
 
     formatter takes an arbitrary number of arguments.
