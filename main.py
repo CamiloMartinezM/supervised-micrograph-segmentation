@@ -4,22 +4,24 @@ Created on Thu Nov 12 08:42:22 2020
 
 @author: Camilo Martínez
 """
-import model
-import numpy as np
+import os
+
 import matplotlib
 import matplotlib.pyplot as plt
-import os
+import numpy as np
+
+import model
 from utils_functions import (
+    adjust_labels,
     compare2imgs,
     find_path_of_img,
     load_img,
-    train_dev_test_split,
-    train_dev_test_split_table,
-    save_variable_to_file,
     load_variable_from_file,
     pixel_counts_to_volume_fraction,
     print_table_from_dict,
-    adjust_labels
+    save_variable_to_file,
+    train_dev_test_split,
+    train_dev_test_split_table,
 )
 
 # Parámetros para las gráficas
@@ -224,7 +226,14 @@ original_img, class_matrix, new_classes, segmentation_pixel_counts = model.segme
     subsegment_class=("pearlite", "ferrite"),
 )
 
-model.visualize_segmentation(original_img, new_classes, class_matrix, dpi=80, save_png=True, png_name="Segmented " + test_img)
+model.visualize_segmentation(
+    original_img,
+    new_classes,
+    class_matrix,
+    dpi=80,
+    save_png=True,
+    png_name="Segmented " + test_img,
+)
 model.plot_image_with_ground_truth(test_img, ground_truth)
 
 segmentation_pixel_counts = adjust_labels(segmentation_pixel_counts)
@@ -233,7 +242,7 @@ print_table_from_dict(
     data=pixel_counts_to_volume_fraction(
         segmentation_pixel_counts,
         pixel_length_scale=micrographs_scales[test_img[:-4]],
-        length_scale=50
+        length_scale=50,
     ),
     cols=["Phase or morphology", "Volume fraction [µm²]", "Percentage area [%]"],
     title="",
@@ -559,7 +568,8 @@ for stat in ["F1 Macro", "Micro Averaged Jaccard Index"]:
         plt.tight_layout()
         plt.xticks(x)
         plt.savefig(
-            f"{_set} changing K ({stat})", dpi=300,
+            f"{_set} changing K ({stat})",
+            dpi=300,
         )
         plt.show()
         plt.close()
@@ -576,7 +586,10 @@ final_model = {}
 feature_vectors_of_label = None
 
 feature_vectors_of_label, classes, T, _ = model.train(
-    K, windows_train, windows_dev=windows_dev, filterbank_name=filterbank,
+    K,
+    windows_train,
+    windows_dev=windows_dev,
+    filterbank_name=filterbank,
 )
 
 parameters = (scale, sigma, min_size)

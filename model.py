@@ -4,18 +4,21 @@ Created on Wed Nov 11 16:59:47 2020
 
 @author: Camilo Martínez
 """
+import json
 import os
 import warnings
 from collections import Counter
-from random import randint
 from itertools import chain
-from numba import jit
+from random import randint
+
 import cv2
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from cuml import KMeans as CumlKMeans
 from cuml.metrics.cluster.entropy import cython_entropy
+from matplotlib.backends.backend_pdf import PdfPages
+from numba import jit
 from numba.core.errors import NumbaWarning
 from pycm import ConfusionMatrix
 from skimage import io
@@ -23,24 +26,19 @@ from skimage.segmentation import mark_boundaries
 from sklearn.cluster import MiniBatchKMeans
 
 from utils_classes import FilterBank, Scaler, SuperpixelSegmentation
-
-import json
-
-from matplotlib.backends.backend_pdf import PdfPages
-
 from utils_functions import (
     find_path_of_img,
+    formatter,
     get_folder,
+    highlight_class_in_img,
+    img_to_binary,
+    jaccard_index_from_ground_truth,
     load_img,
     matrix_to_excel,
     np2cudf,
     plot_confusion_matrix,
     print_table_from_dict,
     statistics_from_matrix,
-    jaccard_index_from_ground_truth,
-    highlight_class_in_img,
-    img_to_binary,
-    formatter,
 )
 
 warnings.simplefilter("ignore", category=NumbaWarning)
@@ -305,7 +303,9 @@ def extract_labeled_windows(
                     print("Done")
 
     print_table_from_dict(
-        labels, cols=["Label", "Number"], title="Number of windows per label",
+        labels,
+        cols=["Label", "Number"],
+        title="Number of windows per label",
     )
 
     return labels, windows_per_label, windows_per_name
@@ -656,7 +656,8 @@ def predict_class_of(
 
     # Matrix which correlates texture texton distances and minimum distances of every pixel.
     A = np.sum(
-        np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09), axis=-1,
+        np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09),
+        axis=-1,
     )
     A_i = A.sum(axis=1)  # Sum over rows (i.e, over all pixels).
     ci = A_i.argmax(axis=0)  # Class with maximum probability of occurrence is chosen.
@@ -1062,7 +1063,10 @@ def evaluate_classification_performance(
             cm.relabel(mapping=mapping)
             print("Done")
             plot_confusion_matrix(
-                cm, normalized=normalized, title=img_filename, save_png=save_png,
+                cm,
+                normalized=normalized,
+                title=img_filename,
+                save_png=save_png,
             )
             if save_xlsx:
                 print(" > Exporting to excel... ", end="")
@@ -1331,12 +1335,19 @@ def evaluate_segmentation_performance(
         title = f"Confusion matrix (segmentation), K = {K}"
 
     plot_confusion_matrix(
-        cm, normalized=True, title=title, dpi=dpi, save_png=save_png,
+        cm,
+        normalized=True,
+        title=title,
+        dpi=dpi,
+        save_png=save_png,
     )
     if save_xlsx:
         print(" > Exporting to excel... ", end="")
         matrix_to_excel(
-            cm_array, classes.tolist(), sheetname=f"K = {K}", filename="Segmentation",
+            cm_array,
+            classes.tolist(),
+            sheetname=f"K = {K}",
+            filename="Segmentation",
         )
         print("Done")
     print(" > Computing metrics... ", end="")
@@ -1418,7 +1429,7 @@ def save_labeled_imgs_to_pdf(
             y = -0.55
             fontsize = 11
 
-            fig.tight_layout()#pad=pad)
+            fig.tight_layout()  # pad=pad)
 
             titles = [title for title in wanted_titles if title in data[name[:-4]]]
 
