@@ -53,7 +53,8 @@ Las imágenes segmentadas (ground truth) se guardan en un diccionario cuyas llav
 nombres de las imágenes y los valores son las respectivas segmentaciones.
 """
 ground_truth = model.load_ground_truth(
-    os.path.join(model.PATH_LABELED, "(Segmented)HypoeutectoidStack.tif"), classes
+    os.path.join(model.PATH_LABELED, "(Segmented)HypoeutectoidStackComplete.tif"),
+    classes,
 )
 
 for key in ground_truth:
@@ -201,7 +202,7 @@ y los valores a la clase a la que dicho superpíxel pertenece. El fundamento mat
 está basado en una decisión de clasificación colectiva de cada superpíxel basada en las
 ocurrencias de los textones más cercanos de todos los píxeles en el superpíxel.
 """
-test_img = "as0014.png"
+test_img = "A1.png"
 filterbank = "MR8"
 classes = np.array(["proeutectoid ferrite", "pearlite"])
 
@@ -226,6 +227,7 @@ original_img, class_matrix, new_classes, segmentation_pixel_counts = model.segme
     subsegment_class=("pearlite", "ferrite"),
 )
 
+# %%
 model.visualize_segmentation(
     original_img,
     new_classes,
@@ -234,20 +236,37 @@ model.visualize_segmentation(
     save_png=True,
     png_name="Segmented " + test_img,
 )
-model.plot_image_with_ground_truth(test_img, ground_truth)
+# model.plot_image_with_ground_truth(test_img, ground_truth)
 
 segmentation_pixel_counts = adjust_labels(segmentation_pixel_counts)
+
+if test_img[:-4] in micrographs_scales:
+    pixel_length_scale = micrographs_scales[test_img[:-4]]
+else:
+    pixel_length_scale = 100
 
 print_table_from_dict(
     data=pixel_counts_to_volume_fraction(
         segmentation_pixel_counts,
-        pixel_length_scale=micrographs_scales[test_img[:-4]],
+        pixel_length_scale=pixel_length_scale,
         length_scale=50,
+        img_size=original_img.shape,
     ),
     cols=["Phase or morphology", "Volume fraction [µm²]", "Percentage area [%]"],
     title="",
     format_as_percentage=[2],
 )
+
+interlaminar_spacing = dict(
+    zip(
+        ["1", "2"],
+        model.calculate_interlamellar_spacing(original_img, class_matrix, new_classes),
+    )
+)
+print_table_from_dict(
+    interlaminar_spacing, ["Method", "Value"], title="Interlaminar spacing"
+)
+
 # %%
 """Evaluación de rendimiento"""
 # Rendimiento en clasificación
@@ -568,8 +587,7 @@ for stat in ["F1 Macro", "Micro Averaged Jaccard Index"]:
         plt.tight_layout()
         plt.xticks(x)
         plt.savefig(
-            f"{_set} changing K ({stat})",
-            dpi=300,
+            f"{_set} changing K ({stat})", dpi=300,
         )
         plt.show()
         plt.close()
@@ -586,10 +604,7 @@ final_model = {}
 feature_vectors_of_label = None
 
 feature_vectors_of_label, classes, T, _ = model.train(
-    K,
-    windows_train,
-    windows_dev=windows_dev,
-    filterbank_name=filterbank,
+    K, windows_train, windows_dev=windows_dev, filterbank_name=filterbank,
 )
 
 parameters = (scale, sigma, min_size)

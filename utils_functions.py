@@ -209,18 +209,10 @@ def print_table_from_dict(
     characteristic_value = list(data.values())[0]
 
     if type(characteristic_value) is np.ndarray:
-        for label in sorted(
-            data.keys(),
-            key=lambda x: data[x].shape[0],
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: data[x].shape[0], reverse=True,):
             table.add_row([label, f"{data[label].shape}"])
     elif type(characteristic_value) is list:
-        for label in sorted(
-            data.keys(),
-            key=lambda x: len(data[x]),
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: len(data[x]), reverse=True,):
             table.add_row([label, f"{len(data[label])}"])
     else:  # int
         for label in data.keys():
@@ -498,9 +490,7 @@ def load_variable_from_file(filename: str, src: str) -> object:
 
 
 def jaccard_index_from_ground_truth(
-    segmented: np.ndarray,
-    ground_truth: np.ndarray,
-    classes: np.ndarray,
+    segmented: np.ndarray, ground_truth: np.ndarray, classes: np.ndarray,
 ) -> float:
     """Calculates the Jaccard index of a segmented image with its corresponding ground
     truth image.
@@ -522,9 +512,7 @@ def jaccard_index_from_ground_truth(
 
         try:
             jaccard[key] = jaccard_score(
-                segmented.flatten(),
-                ground_truth.flatten(),
-                average=average_type,
+                segmented.flatten(), ground_truth.flatten(), average=average_type,
             )
         except:
             continue
@@ -572,21 +560,23 @@ def pixel_counts_to_volume_fraction(
     units: str = "µm",
     img_size: tuple = (500, 500),
 ) -> dict:
-    """Converts a dictionary of pixel counts to a dictionary of volume fractions, given the pixel
-    length scale and its equivalence in µm (or any other unit).
+    """Converts a dictionary of pixel counts to a dictionary of volume fractions, given
+    the pixel length scale and its equivalence in µm (or any other unit).
 
     Args:
-        pixel_counts (dict): Dictionary of pixel counts, where each key is a label and its value is
-                             the number of pixels associated with that label.
-        pixel_length_scale (int): Scale length (present in any micrograph). Corresponds to the
-                                  number of pixels the scale occupies in the image.
+        pixel_counts (dict): Dictionary of pixel counts, where each key is a label and 
+                             its value is the number of pixels associated with that 
+                             label.
+        pixel_length_scale (int): Scale length (present in any micrograph). Corresponds
+                                  to the number of pixels the scale occupies in the 
+                                  image.
         length_scale (int): Value in µm of the scale.
         units (str, optional): Scale unit. Defaults to "µm".
         img_size (tuple, optional): Image size. Defaults to (500, 500).
 
     Returns
-        dict: Dictionary of volume fractions, where each key is a label and its value is its volume
-              fraction in µm² (or any other unit).
+        dict: Dictionary of volume fractions, where each key is a label and its value 
+              is its volume fraction in µm² (or any other unit).
 
     """
     pixel_area_in_pixels = img_size[0] * img_size[1]
@@ -608,9 +598,10 @@ def pixel_counts_to_volume_fraction(
 def highlight_class_in_img(
     img: np.ndarray, mask: np.ndarray, class_: int, fill_value: int = 0
 ) -> np.ndarray:
-    """Highlights a class in an image. The input mask corresponds to the image segmentation and the
-    class_ is the label that will be highlighted. Thus, every pixel in img whose value in mask is
-    equal to class_ is preserved. Otherwise, its value is replaced by fill_value.
+    """Highlights a class in an image. The input mask corresponds to the image 
+    segmentation and the class_ is the label that will be highlighted. Thus, every pixel
+    in img whose value in mask is equal to class_ is preserved. Otherwise, its value is
+    replaced by fill_value.
 
     Example (class_ = 1, fill_value = 0):
 
@@ -661,17 +652,25 @@ def adjust_labels(segmentation_pixel_counts: dict) -> dict:
     Returns:
         dict: Adjusted dictionary of pixel counts.
     """
-    segmentation_pixel_counts["Proeutectoid ferrite"] = segmentation_pixel_counts[
-        "proeutectoid ferrite"
-    ]
-    del segmentation_pixel_counts["proeutectoid ferrite"]
-    segmentation_pixel_counts["Pearlite (ferrite + cementite)"] = (
-        segmentation_pixel_counts["pearlite"] + segmentation_pixel_counts["ferrite"]
-    )
-    segmentation_pixel_counts["> Ferrite"] = segmentation_pixel_counts["ferrite"]
-    del segmentation_pixel_counts["ferrite"]
-    segmentation_pixel_counts["> Cementite"] = segmentation_pixel_counts["pearlite"]
-    del segmentation_pixel_counts["pearlite"]
+    if "proeutectoid ferrite" in segmentation_pixel_counts:
+        segmentation_pixel_counts["Proeutectoid ferrite"] = segmentation_pixel_counts[
+            "proeutectoid ferrite"
+        ]
+        del segmentation_pixel_counts["proeutectoid ferrite"]
+        
+    if "pearlite" in segmentation_pixel_counts:
+        if "ferrite" in segmentation_pixel_counts:
+            segmentation_pixel_counts["Pearlite (ferrite + cementite)"] = (
+                segmentation_pixel_counts["pearlite"]
+                + segmentation_pixel_counts["ferrite"]
+            )
+            segmentation_pixel_counts["> Ferrite"] = segmentation_pixel_counts[
+                "ferrite"
+            ]
+            del segmentation_pixel_counts["ferrite"]
+            
+        segmentation_pixel_counts["> Cementite"] = segmentation_pixel_counts["pearlite"]
+        del segmentation_pixel_counts["pearlite"]
 
     return segmentation_pixel_counts
 
@@ -744,7 +743,8 @@ def peakpos(X: np.ndarray, Y: np.ndarray) -> tuple:
     a, b, c = popt
 
     # hereafter, only the upper half of the Gaussian peak is considered
-    # CutOff50 is the value of (X-b1)/c1 corresponding to the point Y=0.5*a1 of the Gaussian curve
+    # CutOff50 is the value of (X-b1)/c1 corresponding to the point Y=0.5*a1 of the
+    # Gaussian curve
     CutOff50 = (np.log(1 / 0.5)) ** 0.5
 
     # final result: peak position and full-width-at-50%-maximum
@@ -759,7 +759,8 @@ def calculate_spacing(
 
     Args:
         I (np.ndarray): Input image as a numpy array.
-        img_name (str, optional): Image name; useful to name generated plots. Defaults to "img".
+        img_name (str, optional): Image name; useful to name generated plots. Defaults 
+                                  to "img".
         save_plots (bool, optional): True if plots are to be saved. Defaults to False.
         dpi (int, optional): DPI of generated plots. Defaults to 120.
 
@@ -790,8 +791,9 @@ def calculate_spacing(
 
     # Calculate and subtract the background of F
 
-    # Calculate the histogram of the smaller 99.9 % elements of F, by using ((M*N)^0.5)/4) levels
-    # (neglect the very high and rare values, such as F(0,0), which would make binning difficult)
+    # Calculate the histogram of the smaller 99.9 % elements of F, by using
+    # ((M*N)^0.5)/4) levels (neglect the very high and rare values, such as F(0,0),
+    # which would make binning difficult)
     _, xdata = mink(F.flatten(), math.floor(M * N * 0.999))
     [Hist, Edges] = np.histogram(xdata, bins=math.floor(((M * N) ** 0.5) / 4))
     Values = (Edges[1:] - (Edges[1] + Edges[0]) / 2).astype(np.int32)
@@ -823,7 +825,8 @@ def calculate_spacing(
     # W is the wavenumber of each point of the Fourier transform
     W = ((u / M) ** 2 + (v / N) ** 2) ** 0.5
 
-    # n is the linear index, proportional to the wavenumber of each point of the Fourier transform
+    # n is the linear index, proportional to the wavenumber of each point of the Fourier
+    # transform
     n = (((M * N) ** 0.5) * W).astype(np.uint16)
 
     # nmax is the greatest wavenumber index listed in n
@@ -834,14 +837,18 @@ def calculate_spacing(
 
     # Calculate the total spectral magnitude vs. wavenumber curve
 
-    # calculate the total spectral magnitude, Fn, of the Fourier transform for a given wavenumber
-    # = the sum of the magnitude of each set of points of the Fourier transform, which have the same linear index n
-    Fn = np.zeros((nmax + 1,))
-    ravel_n = n.ravel()
-    ravel_F = F.ravel()
-    for i in range(n.shape[0] * n.shape[1]):
-        if ravel_n[i] > 0:
-            Fn[ravel_n[i]] = Fn[ravel_n[i]] + ravel_F[i]
+    # calculate the total spectral magnitude, Fn, of the Fourier transform for a given
+    # wavenumber
+    # = the sum of the magnitude of each set of points of the Fourier transform, which
+    # have the same linear index n
+    # Fn = np.zeros((nmax + 1,))
+    # ravel_n = n.ravel()
+    # ravel_F = F.ravel()
+    # for i in range(n.shape[0] * n.shape[1]):
+    #     if ravel_n[i] > 0:
+    #         Fn[ravel_n[i]] = Fn[ravel_n[i]] + ravel_F[i]
+    Fn = np.bincount(n.ravel(), weights=F.ravel())
+    Fn[0] = 0
 
     # find the peak of the Fn curve
     WnMax, curve_parameters, fw50m = peakpos(Wn, Fn)
@@ -865,14 +872,16 @@ def calculate_spacing(
 
     # Calculate the pearlite spacing (1st method)
 
-    # calculate the  wavelength corresponding to the peak of the total spectral magnitude vs. wavelength curve
+    # calculate the  wavelength corresponding to the peak of the total spectral
+    # magnitude vs. wavelength curve
     spacing1 = 1 / WnMax
 
     # Calculate the pearlite spacing (2nd method)
 
     # the wavenumber is calculated as the mean of the points of W which are
     # close to WnMax (within +/-fw50m/2), weighted over their spectral magnitude F
-    # determine which points should be used (also exclude W=0, i.e. the continuous component)
+    # determine which points should be used (also exclude W=0, i.e. the continuous
+    # component)
     Use = (W > 0) * (W > WnMax - (fw50m / 2)) * (W < WnMax + (fw50m / 2))
 
     # calculate the mean wavenumber weighted over the spectral magnitude
