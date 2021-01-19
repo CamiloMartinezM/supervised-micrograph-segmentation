@@ -6,7 +6,7 @@ Created on Thu Nov 12 06:45:29 2020
 """
 import os
 from itertools import chain, product
-
+import model
 import matplotlib.cm
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,7 +23,11 @@ from skimage.segmentation import (
     watershed,
 )
 
-from utils_functions import find_path_of_img, get_folder, load_img
+from utils_functions import (
+    find_path_of_img,
+    get_folder,
+    load_img,
+)
 
 
 class Scaler:
@@ -146,11 +150,7 @@ class Scaler:
 class SuperpixelSegmentation:
     """Superpixel algorithm implementation with the library skimage."""
 
-    def __init__(
-        self,
-        algorithm: str,
-        parameters: tuple,
-    ) -> None:
+    def __init__(self, algorithm: str, parameters: tuple,) -> None:
         """
         # Args:
             n_segments (int, optional): Approximate number of superpixels to create.
@@ -208,7 +208,7 @@ class SuperpixelSegmentation:
             ax.axis("off")
             return ax
 
-        plt.figure(dpi=dpi)
+        plt.figure(figsize=(10, 8), dpi=dpi)
         plt.imshow(mark_boundaries(image, segments))
         plt.axis("off")
         plt.tight_layout()
