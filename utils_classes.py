@@ -6,7 +6,6 @@ Created on Thu Nov 12 06:45:29 2020
 """
 import os
 from itertools import chain, product
-import model
 import matplotlib.cm
 import matplotlib.pyplot as plt
 import numpy as np
@@ -131,7 +130,7 @@ class Scaler:
         count = 0
         for path, _, files in os.walk(self.startpath):
             for f in files:
-                if f.endswith(".png"):
+                if f.endswith(".png") and not f.startswith("SCALE_"):
                     print("[+] Processing " + str(f) + "... ", end="")
                     folder = get_folder(find_path_of_img(f, self.PATH_PREPROCESSED))
                     if folder is not None:
@@ -388,6 +387,91 @@ class FilterBank:
     @staticmethod
     def _loadmat(filename: str) -> np.ndarray:
         return loadmat("filterbank.mat")["filterbank"]
+
+
+class Preprocessor:
+    """In charge of preprocessing the micrographs, which includes cropping them to the desired 
+    size and cropping the scale."""
+
+    def __init__(
+        self,
+        startpath: str,
+        endpath: str,
+        CROP_CRITERION: float = 0.1,
+        DESIRED_SIZE: tuple = (500, 500),
+    ) -> None:
+        """ 
+        Args:
+            startpath (str): Directory where "to label" micrographs lie.
+            test (bool): If True, a new directory will be created called "Test".  
+            If False, the micrographs in content/data/ will be modified.
+        """
+        self.startpath = startpath
+        self.endpath = endpath
+        self.CROP_CRITERION = CROP_CRITERION
+        self.DESIRED_HEIGHT, self.DESIRED_WIDTH = DESIRED_SIZE
+
+    def crop_scale(self, img: np.ndarray) -> tuple:
+        """Returns the image and its scale separately."""
+        height = img.shape[0]
+        scale = img[int(height - self.CROP_CRITERION * height) :, :]
+        crop_img = img[: int(height - self.CROP_CRITERION * height), :]
+        return scale, crop_img
+
+    def save_to_file(self, name: str, folder: str, img: np.ndarray) -> None:
+        """Saves the image with given name and folder to endpath."""
+        plt.imsave(os.path.join(self.endpath, folder, name), img, cmap="gray")
+
+    def is_possible_crop_to_size(self, img: np.ndarray) -> bool:
+        """ Returns true if the dimensions of the given image are greater than or equal to the 
+        desired one.
+        """
+        height, width = img.shape
+        if height >= self.DESIRED_HEIGHT and width >= self.DESIRED_WIDTH:
+            return True
+        else:
+            return False
+
+    def crop_to_size(self, img: np.ndarray) -> np.ndarray:
+        """Crops the given image to the desired size. This will only work if 
+        is_possible_crop_to_size(img) returns True."""
+        height = img.shape[0]
+        width = img.shape[1]
+        middle = (height // 2, width // 2)
+        return img[
+            middle[0] - self.DESIRED_HEIGHT // 2 : middle[0] + self.DESIRED_HEIGHT // 2,
+            middle[1] - self.DESIRED_WIDTH // 2 : middle[1] + self.DESIRED_WIDTH // 2,
+        ]
+
+    def process(self) -> None:
+        """Deals with all micrographs in startpath."""
+        for path, _, files in os.walk(self.startpath):
+            for f in files:
+                if f.endswith(".png"):
+                    print("[+] Processing " + str(f) + "... ", end="")
+                    folder = get_folder(path)
+                    if not os.path.isdir(os.path.join(self.endpath, folder)):
+                        os.mkdir(os.path.join(self.endpath, folder))
+                        
+                    if f not in os.listdir(os.path.join(self.endpath, folder)):
+                        try:
+                            img = load_img(os.path.join(path, f))
+                            scale, img = self.crop_scale(img)
+                            if self.is_possible_crop_to_size(img):
+                                crop_img = self.crop_to_size(img)
+                                self.save_to_file(f, folder, crop_img)
+                                self.save_to_file("SCALE_" + f, folder, scale)
+                                assert crop_img.shape == (
+                                    self.DESIRED_HEIGHT,
+                                    self.DESIRED_WIDTH,
+                                )
+                                print("Done")
+                            else:
+                                print("Failed. Not possible to crop.")
+                        except:
+                            print("Something went wrong.")
+                    else:
+                        print("Preprocessed before.")
 
 
 class MultiscaleStatistics:

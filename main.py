@@ -107,6 +107,7 @@ micrographs, index_to_name = model.load_imgs(exclude=["Low carbon"])
 # %%
 """Carga de las escalas"""
 micrographs_scales = model.load_scales()
+save_variable_to_file(micrographs_scales, "scales", dst="saved_variables")
 
 # %%
 """Textones
