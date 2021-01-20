@@ -236,6 +236,85 @@ def print_table_from_dict(
     print(table.get_string(title=title))
 
 
+def print_interlaminar_spacing_table(
+    spacing: dict, title: str = "Interlaminar spacing"
+) -> None:
+    """Prints a table from a dictionary of interlaminar spacings.
+
+    Args:
+        spacing (dict): Dictionary of spacings.
+        title (str, optional): Title to put above table. Defaults to "Interlaminar spacing".
+    """
+    print("")
+
+    cols = ["Method", "Spacing [px]", "Spacing [µm]"]
+    table = PrettyTable(cols)
+    table.align[cols[1]] = "r"
+    table.align[cols[2]] = "r"
+
+    for method, values in spacing.items():
+        table.add_row(
+            [method, f"{round(values['px'], 3)}", f"{round(values['µm'], 3)}"]
+        )
+
+    print(table.get_string(title=title))
+
+
+def print_mechanical_properties_table(
+    mechanical_properties: dict, spacing: dict, title: str = "Mechanical Properties"
+) -> None:
+    """Prints a table from a dictionary of mechanical properties.
+
+    Args:
+        mechanical_properties (dict): Dictionary of mechanical properties.
+        spacing (dict): Dictionary of spacings.
+        title (str, optional): Title to put above table. Defaults to "Mechanical Properties".
+    """
+    print("")
+
+    cols = [
+        "Method",
+        "Spacing [px]",
+        "Spacing [µm]",
+        "Yield Strength [MPa]",
+        "Tensile Strength [MPa]",
+        "Yield Strength [ksi]",
+        "Tensile Strength [ksi]",
+    ]
+    table = PrettyTable(cols)
+    for col in cols[1:]:
+        table.align[col] = "r"
+
+    for method in spacing:
+        spacing_px = round(spacing[method]["px"], 3)
+        spacing_mm = round(spacing[method]["µm"], 3)
+        yield_strength_mpa = round(
+            mechanical_properties[method]["Yield Strength [MPa]"], 2
+        )
+        tensile_strength_mpa = round(
+            mechanical_properties[method]["Tensile Strength [MPa]"], 2
+        )
+        yield_strength_ksi = round(
+            mechanical_properties[method]["Yield Strength [MPa]"] * 0.145038, 2
+        )
+        tensile_strength_ksi = round(
+            mechanical_properties[method]["Tensile Strength [MPa]"] * 0.145038, 2
+        )
+        table.add_row(
+            [
+                method,
+                f"{spacing_px}",
+                f"{spacing_mm}",
+                f"{yield_strength_mpa}",
+                f"{tensile_strength_mpa}",
+                f"{yield_strength_ksi}",
+                f"{tensile_strength_ksi}",
+            ]
+        )
+
+    print(table.get_string(title=title))
+
+
 def train_dev_test_split_table(train: dict, dev: dict, test: dict) -> None:
     """Prints a table which shows the size of the train, dev and test set per label.
 
@@ -276,7 +355,7 @@ def plot_confusion_matrix(
     title: str = "Confusion matrix",
     dpi: int = 120,
     save_png: bool = True,
-    show: bool = False
+    show: bool = False,
 ) -> None:
     """Plots a visual representation of a confusion matrix.
     Original: https://stackoverflow.com/questions/35585069/python-tabulating-confusion-matrix
