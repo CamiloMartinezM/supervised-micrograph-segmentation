@@ -276,6 +276,7 @@ def plot_confusion_matrix(
     title: str = "Confusion matrix",
     dpi: int = 120,
     save_png: bool = True,
+    show: bool = False
 ) -> None:
     """Plots a visual representation of a confusion matrix.
     Original: https://stackoverflow.com/questions/35585069/python-tabulating-confusion-matrix
@@ -292,7 +293,10 @@ def plot_confusion_matrix(
     fig = matrix.plot(
         cmap=plt.cm.Reds, number_label=True, normalized=normalized, one_vs_all=True
     )
-    plt.pause(0.05)
+    if show:
+        plt.pause(0.05)
+    else:
+        plt.close()
     # plt.show()
     # plt.close()
 

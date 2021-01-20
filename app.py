@@ -22,6 +22,7 @@ from utils_classes import Preprocessor
 from colorama import Fore, Style
 import model
 import numpy as np
+import statistics
 
 # Author
 AUTHOR = "Camilo Martínez M."
@@ -50,6 +51,9 @@ class SegmentationModel:
         windows_train: dict,
         windows_dev: dict,
         windows_test: dict,
+        training_set: dict,
+        development_set: dict,
+        test_set: dict,
         algorithm_parameters: tuple = (100, 1.4, 100),
     ) -> None:
         self.K = K
@@ -62,6 +66,9 @@ class SegmentationModel:
         self.windows_train = windows_train
         self.windows_dev = windows_dev
         self.windows_test = windows_test
+        self.training_set = training_set
+        self.development_set = development_set
+        self.test_set = test_set
         self.superpixel_algorithm = superpixel_algorithm
         self.algorithm_parameters = algorithm_parameters
 
@@ -79,6 +86,9 @@ class SegmentationModel:
             parameters["windows_train"],
             parameters["windows_dev"],
             parameters["windows_test"],
+            parameters["training_set"],
+            parameters["development_set"],
+            parameters["test_set"],
             algorithm_parameters=parameters["algorithm_parameters"],
         )
 
@@ -146,25 +156,119 @@ class SegmentationModel:
             self.windows_train,
             self.windows_dev,
             self.windows_test,
+            save_png=False,
+            save_xlsx=False,
         )
-        overall_stats = ["Overall Accuracy", "F1 Macro", "Overall Jaccard Index"]
+        SegmentationModel.show_metrics(classification_metrics)
+
+    def evaluate_segmentation_performance(
+        self, imgs_folder: str, ground_truth: dict
+    ) -> None:
+        segmentation_metrics = {}
+        jaccard_per_img = {}
+        for _set in ["Train", "Dev", "Test"]:
+            if _set == "Train":
+                print("\n[+] On training...")
+            elif _set == "Dev":
+                print("\n[+] On development...")
+            else:
+                print("\n[+] On testing...")
+
+            (
+                segmentation_metrics[_set],
+                jaccard_per_img[_set],
+            ) = model.evaluate_segmentation_performance(
+                self.training_set[:3],
+                ground_truth,
+                self.classes,
+                self.K,
+                self.texton_matrix,
+                self.superpixel_algorithm,
+                self.algorithm_parameters,
+                filterbank_name=self.filterbank,
+                imgs_folder=imgs_folder,
+                save_png=False,
+                save_xlsx=False,
+            )
+
+        for _set in jaccard_per_img:
+            micro_jaccard = []
+            for img in jaccard_per_img[_set]:
+                micro_jaccard.append(jaccard_per_img[_set][img]["Micro"])
+
+            segmentation_metrics[_set]["Overall Statistics"][
+                "Micro Averaged Jaccard Index"
+            ] = statistics.harmonic_mean(micro_jaccard)
+
+        SegmentationModel.show_metrics(segmentation_metrics)
+
+    @staticmethod
+    def show_metrics(metrics: dict) -> None:
+        print("\n[+] Metrics:")
+        overall_stats = [
+            "Overall Accuracy",
+            "F1 Macro",
+            "Overall Jaccard Index",
+            "Micro Averaged Jaccard Index",
+        ]
         class_stats = ["Accuracy", "Averaged F1"]
-        for _set in classification_metrics:
-            print(_set + ":")
-            print("\tOverall:")
-            for stat in overall_stats:
-                value = classification_metrics[_set]['Overall Statistics'][stat]
-                print(f"\t\t{stat}: {value}")
-            print("\n\tPer Class:")
-            for stat in class_stats:
-                print(f"\t\t{stat}:", end="")
-                value = classification_metrics[_set]['Class Statistics'][stat]
+        branch = " │ "
+        for i, _set in enumerate(metrics):
+            if i == len(metrics) - 1:
+                bullet = " └── "
+            else:
+                bullet = " ├── "
+
+            print(bullet + _set + ":")
+            if _set != "Test":
+                print(f"{branch}", end="")
+            print("\t ├── Overall:")
+            for j, stat in enumerate(overall_stats):
+                if j == len(overall_stats) - 1:
+                    bullet = " └── "
+                else:
+                    bullet = " ├── "
+                value = metrics[_set]["Overall Statistics"][stat]
+                if _set != "Test":
+                    print(f"{branch}", end="")
+                if type(value) is tuple:
+                    value_to_print = (round(value[0], 3), round(value[1], 3))
+                    value_to_print = str(value_to_print)
+                else:
+                    value_to_print = str(round(value, 3))
+                print(f"\t{branch}\t{bullet}{stat}: {value_to_print}")
+
+            if _set != "Test":
+                print(f"{branch}\t{branch}\n{branch}", end="")
+            else:
+                print(f"\t{branch}\n", end="")
+            print(f"\t{bullet}Per Class:")
+            for k, stat in enumerate(class_stats):
+                if k == len(class_stats) - 1:
+                    bullet = " └── "
+                else:
+                    bullet = " ├── "
+                if _set != "Test":
+                    print(f"{branch}", end="")
+                print(f"\t\t{bullet}{stat}: ", end="")
+                value = metrics[_set]["Class Statistics"][stat]
                 if type(value) is dict:
                     print()
-                    for label, value in value:
-                        print(f"\t\t\t{label}: {value}")
-                else:
+                    for l, pair in enumerate(value.items()):
+                        if l == len(value) - 1:
+                            bullet = " └── "
+                        else:
+                            bullet = " ├── "
+                        label, subvalue = pair
+                        if _set != "Test":
+                            print(f"{branch}", end="")
+                        print(f"\t\t{branch}\t{bullet}{label}: {round(subvalue, 3)}")
+                elif type(value) is tuple:
+                    value = (round(value[0], 3), round(value[1], 3))
                     print(f"{value}")
+                else:
+                    print(f"{round(value, 3)}")
+
 
 def _clear() -> None:
     """Clears the console."""
@@ -400,7 +504,7 @@ def _select_image(folder: str) -> str:
 
 
 def _take_option(selected_stuff: tuple) -> int:
-    imgs_folder, img_name, selected_model = selected_stuff
+    imgs_folder, img_name, selected_model, ground_truth = selected_stuff
     if imgs_folder == ".":
         imgs_folder = "{Current}"
 
@@ -424,6 +528,13 @@ def _take_option(selected_stuff: tuple) -> int:
                 else:
                     option += ", "
                 option += f"Model: {selected_model.name}"
+                close_bracket = True
+            if ground_truth is not None:
+                if not close_bracket:
+                    option += "("
+                else:
+                    option += ", "
+                option += "Ground truth: Loaded"
                 close_bracket = True
 
             if close_bracket:
@@ -499,6 +610,9 @@ def _load_default_parameters() -> dict:
         "windows_train": None,
         "windows_dev": None,
         "windows_test": None,
+        "training_set": None,
+        "development_set": None,
+        "test_set": None,
     }
     return parameters
 
@@ -591,6 +705,9 @@ def _load_new_parameters() -> dict:
         "windows_train": None,
         "windows_dev": None,
         "windows_test": None,
+        "training_set": None,
+        "development_set": None,
+        "test_set": None,
     }
     return parameters
 
@@ -636,6 +753,73 @@ def _set_up_train_dev_test_split() -> tuple:
     return train_size, dev_size
 
 
+def _load_ground_truth(labeled_folder: str, classes: np.ndarray) -> str:
+    ground_truth_path = None
+    try:
+        int("tela")
+        root = tk.Tk()
+        root.withdraw()
+        file_path = filedialog.askopenfilename()
+        ground_truth_path = os.path.relpath(file_path, start=os.getcwd())
+    except:
+        print("[*] Unable to open a GUI file chooser. Using script-based option.")
+
+        path = os.getcwd()
+        print(
+            textwrap.dedent(
+                """
+                    [?] Press Enter to show files with .tif extension in current folder.
+                        Include the extension when typing the file name.
+                """
+            )
+        )
+
+        while True:
+            img_name = input("\t[?] File name >> ").strip()
+
+            if img_name != "":
+                if img_name not in os.listdir(path):
+                    print(
+                        f"\t[*] File {img_name} was not found in current folder. Try again."
+                    )
+                else:
+                    ground_truth_path = os.path.relpath(
+                        os.path.join(path, img_name), start=os.getcwd()
+                    )
+            else:
+                break
+
+        if ground_truth_path is None:
+            files = [
+                file
+                for file in os.listdir(path)
+                if not os.path.isdir(file) and file.endswith(".tif")
+            ]
+            files = sorted(files) + ["EXIT"]
+            files_dict = {ind: value for ind, value in enumerate(files)}
+            for key in files_dict:
+                print("\t(" + str(key) + ") " + files_dict[key])
+
+            while True:
+                try:
+                    resp = int(input("\t> ").strip())
+                    if resp not in files_dict:
+                        raise Exception("")
+                    else:
+                        break
+                except:
+                    print("\t[*] Please, select a valid file.")
+
+            if files_dict[resp] == "EXIT":
+                return None
+            else:
+                ground_truth_path = os.path.relpath(files_dict[resp], start=os.getcwd())
+
+    ground_truth = model.load_ground_truth(ground_truth_path, labeled_folder, classes)
+
+    return ground_truth
+
+
 def load_final_model() -> SegmentationModel:
     return SegmentationModel(
         K=6,
@@ -651,6 +835,11 @@ def load_final_model() -> SegmentationModel:
         windows_train=load_variable_from_file("training_windows", "saved_variables"),
         windows_dev=load_variable_from_file("development_windows", "saved_variables"),
         windows_test=load_variable_from_file("testing_windows", "saved_variables"),
+        training_set=load_variable_from_file("training_set_imgs", "saved_variables"),
+        development_set=load_variable_from_file(
+            "development_set_imgs", "saved_variables"
+        ),
+        test_set=load_variable_from_file("testing_set_imgs", "saved_variables"),
     )
 
 
@@ -691,7 +880,7 @@ def load_new_model() -> SegmentationModel:
                 loaded_elements["Feature vectors"] = True
                 clear_console = True
             elif selected_option == 2:
-                labeled_folder = _get_folder()
+                labeled_folder = _select_image_folder()
                 print("\n[+] Loading of images:")
                 micrographs, index_to_name = model.load_imgs(
                     labeled_folder, exclude=["Low carbon"]
@@ -736,7 +925,7 @@ def load_new_model() -> SegmentationModel:
                 tool_menu(section, loaded_elements)
                 clear_console = False
             elif selected_option == 6:
-                preprocessed_folder = _get_folder()
+                preprocessed_folder = _select_image_folder()
                 section -= 1
             elif selected_option == 7:
                 if preprocessed_folder is None:
@@ -853,6 +1042,15 @@ def load_new_model() -> SegmentationModel:
         parameters["windows_test"] = load_variable_from_file(
             "windows_test", "saved_variables"
         )
+        parameters["training_set"] = load_variable_from_file(
+            "training_set_imgs", "saved_variables"
+        )
+        parameters["development_set"] = load_variable_from_file(
+            "development_set_imgs", "saved_variables"
+        )
+        parameters["test_set"] = load_variable_from_file(
+            "testing_set_imgs", "saved_variables"
+        )
 
     return SegmentationModel.from_parameters_dict(parameters)
 
@@ -943,6 +1141,7 @@ def main():
     imgs_folder = None
     img_name = None
     selected_model = None
+    ground_truth = None
 
     _continue_ = True
     clear_console = True
@@ -955,7 +1154,9 @@ def main():
             main_menu()
             clear_console = False
 
-        selected_option = _take_option((imgs_folder, img_name, selected_model))
+        selected_option = _take_option(
+            (imgs_folder, img_name, selected_model, ground_truth)
+        )
 
         if selected_option == 1:
             imgs_folder = _select_image_folder()
@@ -992,9 +1193,34 @@ def main():
             sleep(2)
             clear_console = True
         elif selected_option == 6:
-            pass # TODO
+            pass  # TODO
         elif selected_option == 7:
-            selected_model.evaluate_classification_performance()
+            print()
+            if selected_model is None:
+                print("[*] No model selected.")
+            else:
+                selected_model.evaluate_classification_performance()
+                _ = input("[?] Press any key to continue >> ")
+                clear_console = True
+        elif selected_option == 8:
+            print()
+            if selected_model is None:
+                print("[*] No model selected.")
+            else:
+                if imgs_folder is None:
+                    print("[*] You need to specify a folder of images to segment.")
+                    continue
+                elif ground_truth is None:
+                    print("[*] You need to load a ground truth first (.tif file).")
+                    ground_truth = _load_ground_truth(
+                        imgs_folder, selected_model.classes
+                    )
+
+                selected_model.evaluate_segmentation_performance(
+                    imgs_folder, ground_truth
+                )
+                _ = input("[?] Press any key to continue >> ")
+                clear_console = True
         elif selected_option == 0:
             _continue_ = False
         else:
