@@ -1106,15 +1106,15 @@ def evaluate_classification_performance(
                 cm, normalized=normalized, title=img_filename, save_png=save_png,
             )
             if save_xlsx:
-                print(" > Exporting to excel... ", end="")
+                print(" ├── Exporting to excel... ", end="")
                 matrix_to_excel(
                     cm_array,
                     classes.tolist(),
                     sheetname=sheetname,
                     filename=excel_filename,
                 )
-            print("Done")
-            print(" > Computing metrics... ", end="")
+                print("Done")
+            print(" └── Computing metrics... ", end="")
             stats = statistics_from_matrix(cm)
             print("Done")
             return stats
@@ -1134,7 +1134,7 @@ def evaluate_classification_performance(
 
 
 def load_ground_truth(
-    path_ground_truth: str, tif_file: str, classes: np.ndarray
+    path_ground_truth: str, labeled_folder: str, classes: np.ndarray
 ) -> dict:
     """Obtains a dictionary of ground truth images, where keys are names of images
     and values are the corresponding ground truth images. This is the ground truth
@@ -1151,13 +1151,13 @@ def load_ground_truth(
     Returns:
         dict: Dictionary of ground truth images.
     """
-    ground_truth_imgs = io.imread(tif_file)[:, 0, :, :]
+    ground_truth_imgs = io.imread(path_ground_truth)[:, 0, :, :]
     ground_truth = np.zeros(ground_truth_imgs.shape, dtype=int)
     for i in range(ground_truth_imgs.shape[0]):
         ground_truth_img = ground_truth_imgs[i, :, :].astype(int)
         ground_truth[i, :, :] = make_classes_consistent(ground_truth_img, classes)
 
-    l = [f for f in sorted(os.listdir(path_ground_truth)) if f.endswith(".png")]
+    l = [f for f in sorted(os.listdir(labeled_folder)) if f.endswith(".png")]
     return dict(zip(l, ground_truth))
 
 
@@ -1260,8 +1260,14 @@ def segmentation_metrics(
     matrix = None
     jaccard_per_img = {}
     for k, name in enumerate(imgs):
-        print(f"\t[?] Segmenting {name}... ", end="")
-        original_img, superpixels, segmented_img, segmented_img_as_matrix = segment(
+        if k == len(imgs) - 1:
+            bullet = " └── " 
+            branch = "   "
+        else:
+            bullet = " ├── "
+            branch = " │ "
+        print(f" │\t{bullet}Segmenting {name}... ", end="")
+        _, segmented_img_as_matrix, _, _ = segment(
             find_path_of_img(name, src=src),
             classes,
             T,
@@ -1276,14 +1282,14 @@ def segmentation_metrics(
         y_true = ground_truth[name].ravel()
 
         if matrix is None:
-            print("\t    > Calculating confusion matrix... ", end="")
+            print(f" │\t{branch}   ├── Calculating confusion matrix... ", end="")
             matrix = ConfusionMatrix(y_true, y_pred, transpose=True)
         else:
-            print("\t    > Combining confusion matrix with previous one... ", end="")
+            print(f" │\t{branch}   ├── Combining confusion matrix with previous one... ", end="")
             matrix = matrix.combine(ConfusionMatrix(y_true, y_pred, transpose=True))
 
         print("Done")
-        print("\t    > Calculating Jaccard Index for this image... ", end="")
+        print(f" │\t{branch}   └── Calculating Jaccard Index for this image... ", end="")
         jaccard_per_img[name] = jaccard_index_from_ground_truth(
             segmented_img_as_matrix, ground_truth[name], classes
         )
@@ -1303,6 +1309,7 @@ def evaluate_segmentation_performance(
     algorithm: str,
     algorithm_parameters: str,
     filterbank_name: str,
+    imgs_folder: str,
     save_png: bool,
     save_xlsx: bool,
     dpi: int = 120,
@@ -1332,7 +1339,6 @@ def evaluate_segmentation_performance(
                                     the filesystem as a .xlsx file. Defaults to True.
         max_test_number (int, optional): [description]. Defaults to -1.
     """
-    print("\n[*] SEGMENTATION PERFORMANCE:")
     print("\n[+] Computing segmentation performance... ")
     cm, cm_array, jaccard_per_img = segmentation_metrics(
         imgs,
@@ -1342,6 +1348,7 @@ def evaluate_segmentation_performance(
         algorithm,
         algorithm_parameters,
         filterbank_name=filterbank_name,
+        src=imgs_folder,
         max_test_number=max_test_number,
     )
     # Maps integers classes to actual names of classes.
@@ -1367,12 +1374,12 @@ def evaluate_segmentation_performance(
         cm, normalized=True, title=title, dpi=dpi, save_png=save_png,
     )
     if save_xlsx:
-        print(" > Exporting to excel... ", end="")
+        print(" ├── Exporting to excel... ", end="")
         matrix_to_excel(
             cm_array, classes.tolist(), sheetname=f"K = {K}", filename="Segmentation",
         )
         print("Done")
-    print(" > Computing metrics... ", end="")
+    print(" └── Computing metrics... ", end="")
     stats = statistics_from_matrix(cm)
     print("Done\n")
     return stats, jaccard_per_img
