@@ -452,7 +452,7 @@ class Preprocessor:
                     folder = get_folder(path)
                     if not os.path.isdir(os.path.join(self.endpath, folder)):
                         os.mkdir(os.path.join(self.endpath, folder))
-                        
+
                     if f not in os.listdir(os.path.join(self.endpath, folder)):
                         try:
                             img = load_img(os.path.join(path, f))
@@ -472,6 +472,50 @@ class Preprocessor:
                             print("Something went wrong.")
                     else:
                         print("Preprocessed before.")
+
+
+class Material:
+    def __init__(
+        self,
+        fa: float,
+        S_0: float,
+        p_C: float,
+        p_Mn: float = 0,
+        D_a: float = 0,
+        p_N: float = 0,
+        p_P: float = 0,
+        p_Si: float = 0,
+    ) -> None:
+        if fa > 0.1:
+            self.sigma_y = (
+                fa * (77.7 + 59.5 * p_Mn + 9.1 * (D_a ** (-0.5)))
+                + 145.5
+                + 3.5 * (S_0 ** (-0.5))
+                + 478 * (p_N ** 0.5)
+                + 1200 * p_P
+            )
+    
+            self.sigma_u = (
+                fa * (20 + 2440 * (p_N ** 0.5) + 18.5 * D_a)
+                + 750 * (1 - fa)
+                + 3 * (S_0 ** (-0.5))(1 - fa ** 0.5)
+                + 92.5 * p_Si
+            )
+        else:
+            t = 0.15*S_0*p_C
+            M = 2*(S_0 - t)
+            if S_0 >= 0.15:
+                self.sigma_y = 308 + 0.07*(M**(-1))
+                self.sigma_u = 706 + 0.072*(M**(-1)) + 122*p_Si
+            else:
+                self.sigma_y = 259 + 0.087*(M**(-1))
+                self.sigma_u = 773 + 0.058*(M**(-1)) + 122*p_Si
+    
+    def yield_strength(self) -> float:
+        return self.sigma_y
+    
+    def tensile_strength(self) -> float:
+        return self.sigma_u
 
 
 class MultiscaleStatistics:

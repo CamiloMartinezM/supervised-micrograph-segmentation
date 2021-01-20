@@ -17,12 +17,15 @@ from utils_functions import (
     pixel_counts_to_volume_fraction,
     train_dev_test_split,
     train_dev_test_split_table,
+    print_interlaminar_spacing_table,
+    print_mechanical_properties_table,
 )
-from utils_classes import Preprocessor
+from utils_classes import Preprocessor, Material
 from colorama import Fore, Style
 import model
 import numpy as np
 import statistics
+from pathlib import Path
 
 # Author
 AUTHOR = "Camilo Martínez M."
@@ -92,7 +95,9 @@ class SegmentationModel:
             algorithm_parameters=parameters["algorithm_parameters"],
         )
 
-    def segment(self, image_path: str, pixel_length_scale: int) -> None:
+    def segment(
+        self, image_path: str, pixel_length_scale: int, length_scale: int
+    ) -> None:
         (
             original_img,
             class_matrix,
@@ -117,14 +122,15 @@ class SegmentationModel:
         # model.plot_image_with_ground_truth(test_img, ground_truth)
 
         segmentation_pixel_counts = adjust_labels(segmentation_pixel_counts)
+        volume_fractions = pixel_counts_to_volume_fraction(
+            segmentation_pixel_counts,
+            pixel_length_scale=pixel_length_scale,
+            length_scale=length_scale,
+            img_size=original_img.shape,
+        )
 
         print_table_from_dict(
-            data=pixel_counts_to_volume_fraction(
-                segmentation_pixel_counts,
-                pixel_length_scale=pixel_length_scale,
-                length_scale=50,
-                img_size=original_img.shape,
-            ),
+            data=volume_fractions,
             cols=[
                 "Phase or morphology",
                 "Volume fraction [µm²]",
@@ -134,18 +140,119 @@ class SegmentationModel:
             format_as_percentage=[2],
         )
 
-        interlaminar_spacing = dict(
-            zip(
-                ["1", "2"],
-                model.calculate_interlamellar_spacing(
-                    original_img, class_matrix, new_classes
-                ),
+        spacings = model.calculate_interlamellar_spacing(
+            original_img, class_matrix, new_classes
+        )
+        interlaminar_spacing = {
+            "1": {
+                "px": spacings[0],
+                "µm": spacings[0] * length_scale / pixel_length_scale,
+            },
+            "2": {
+                "px": spacings[1],
+                "µm": spacings[1] * length_scale / pixel_length_scale,
+            },
+        }
+
+        print_interlaminar_spacing_table(interlaminar_spacing)
+
+        predict = _get_str_input(
+            "[?] Predict mechanical properties?", ["yes", "no"], default="yes"
+        )
+        if predict == "yes":
+            SegmentationModel.predict_mechanical_properties(volume_fractions, interlaminar_spacing)
+
+    @staticmethod
+    def predict_mechanical_properties(volume_fractions: dict, spacings: dict) -> None:
+        print("\nStructure-Property Relationships:\n")
+        print("For plain-carbon steels:\n")
+        print(
+            textwrap.dedent(
+                """
+                    σ_y = f_α[77.7 + 59.5(%Mn) + 9.1D_α^(-0.5)] + 145.5 
+                           + 3.5λ^(-0.5) + 478(%N)^(0.5)+ 1200(%P)
+                """
             )
         )
-
-        print_table_from_dict(
-            interlaminar_spacing, ["Method", "Value"], title="Interlaminar spacing"
+        print(
+            textwrap.dedent(
+                """
+                    σ_u = f_α[20 + 2440(%N)^0.5 + 18.5D_α] + [750(1 - f_α)] 
+                           + 3(λ^(-0.5))(1 - f_α^(0.5)) + 92.5(%Si)
+                """
+            )
         )
+        print("\nFor fully pearlitic steels (M = 2(λ - t); t = 0.15λ(%C)):\n")
+        print("\n\tIf λ >= 0.15 µm")
+        print("\t\tσ_y = 308 + 0.07M^(-1)")
+        print("\t\tσ_u = 706 + 0.072M^(-1)) + 122(%Si)")
+        print("\n\tIf λ < 0.15 µm")
+        print("\t\tσ_y = 259 + 0.087M^(-1)")
+        print("\t\tσ_u = 773 + 0.058M^(-1) + 122(%Si)")
+        print(
+            textwrap.dedent(
+                """
+                   Where λ is the pearlite interlamellar spacing; f_α, the percentage of 
+                   proeutectoid ferrite; D_α, the ferrite grain size; and %Mn, %Si, %P, %N
+                   correspond to the chemical composition of the material in question.
+                
+                   λ is the most influential parameter in these equations; nonetheless, the
+                   inclusion of the other parameters can improve the prediction.
+                
+                   Input the parameters you want to take into account; otherwise press Enter to 
+                   leave the value at zero.
+                """
+            )
+        )
+        if volume_fractions.get("ferrite", 0) <= 0.1:  # pearlitic steel
+            p_C = _get_simple_numerical_entry("[?] %C", "float")
+            p_Si = _get_simple_numerical_entry(
+                "[?] %Si", "float", default_value=0
+            )
+            steels = {}
+            for method in spacings:
+                steels[method] = Material(
+                    fa=volume_fractions.get("ferrite", 0),
+                    S_0=spacings[method]["µm"],
+                    p_C=p_C,
+                    p_Si=p_Si,
+                )
+        else:  # plain-carbon steel
+            p_C = _get_simple_numerical_entry("[?] %C", "float")
+            p_Mn = _get_simple_numerical_entry(
+                "[?] %Mn", "float", default_value=0
+            )
+            D_a = _get_simple_numerical_entry("[?] D_α, µm", "float", default_value=0)
+            p_N = _get_simple_numerical_entry(
+                "[?] %N", "float", default_value=0
+            )
+            p_P = _get_simple_numerical_entry(
+                "[?] %P", "float", default_value=0
+            )
+            p_Si = _get_simple_numerical_entry(
+                "[?] %Si", "float", default_value=0
+            )
+            steels = {}
+            for method in spacings:
+                steels[method] = Material(
+                    fa=volume_fractions.get("ferrite", 0),
+                    S_0=spacings[method]["µm"],
+                    p_C=p_C,
+                    p_Mn=p_Mn,
+                    D_a=D_a,
+                    p_N=p_N,
+                    p_P=p_P,
+                    p_Si=p_Si,
+                )
+
+        mechanical_properties = {}
+        for method, steel in steels.items():
+            mechanical_properties[method] = {
+                "Yield Strength [MPa]": steel.sigma_y,
+                "Tensile Strength [MPa]": steel.sigma_u,
+            }
+            
+        print_mechanical_properties_table(mechanical_properties, spacings)
 
     def evaluate_classification_performance(self) -> None:
         classification_metrics = model.evaluate_classification_performance(
@@ -278,6 +385,11 @@ def _clear() -> None:
         _ = os.system("clear")  # For mac and linux (here, os.name is 'posix').
 
 
+def path_leaf(path: str) -> str:
+    """Gets the filename associated with a path."""
+    return Path(path).stem
+
+
 def _create_title(title: str) -> None:
     """ Creates a proper title.
     
@@ -312,9 +424,9 @@ def _get_simple_numerical_entry(
     """
     complete_msg = msg
     if default_value is not None:
-        complete_msg += " (Default=" + str(default_value)
+        complete_msg += " (Default=" + str(default_value) + ")"
 
-    complete_msg += ") > "
+    complete_msg += " > "
     entry_str = ""
     entry = None
     try:
@@ -360,7 +472,7 @@ def _get_str_input(msg: str, valid_inputs: list, default: str = None) -> str:
             + raw_str
         )
         print(error_message + ".")
-        raw_str = _get_str_input(msg, valid_inputs)
+        raw_str = _get_str_input(msg, valid_inputs, default)
 
     return raw_str.strip().lower()
 
@@ -1055,8 +1167,15 @@ def load_new_model() -> SegmentationModel:
     return SegmentationModel.from_parameters_dict(parameters)
 
 
-def segment_an_image(image_path: str, model: SegmentationModel) -> None:
-    model.segment(image_path, pixel_length_scale=100)
+def segment_an_image(
+    image_path: str,
+    selected_model: SegmentationModel,
+    pixel_length_scale: int,
+    length_scale: int,
+) -> None:
+    selected_model.segment(
+        image_path, pixel_length_scale=pixel_length_scale, length_scale=length_scale
+    )
     _ = input("[?] Press any key to continue >> ")
 
 
@@ -1130,10 +1249,9 @@ def main_menu() -> None:
     print("4. Create a new model.")
     print("\nActions:")
     print("5. Segment selected image.")
-    print("6. Segment selected folder.")
     print("\nEvaluate:")
-    print("7. Classification performance.")
-    print("8. Segmentation performance.")
+    print("6. Classification performance.")
+    print("7. Segmentation performance.")
     print("0. Quit.\n")
 
 
@@ -1188,13 +1306,35 @@ def main():
             elif img_name is None:
                 print("\n[*] An image has not been selected.")
             else:
-                segment_an_image(img_name, selected_model)
+                filename = path_leaf(img_name)
+                if filename in selected_model.scales:
+                    pixel_length_scale = selected_model.scales[filename]
+                    print(
+                        textwrap.dedent(
+                            f"""
+                            [+] {filename} found on scales information. 
+                                Loaded scale length in pixels: {pixel_length_scale} px.
+                            """
+                        )
+                    )
+                else:
+                    print(
+                        "\n[*] There is no scales information for that image. Input it manually.\n"
+                    )
+                    pixel_length_scale = _get_simple_numerical_entry(
+                        "[?] Scale length in pixels", "int"
+                    )
+
+                length_scale = _get_simple_numerical_entry(
+                    "[?] Scale length in µm", "int"
+                )
+                segment_an_image(
+                    img_name, selected_model, pixel_length_scale, length_scale
+                )
 
             sleep(2)
             clear_console = True
         elif selected_option == 6:
-            pass  # TODO
-        elif selected_option == 7:
             print()
             if selected_model is None:
                 print("[*] No model selected.")
@@ -1202,7 +1342,7 @@ def main():
                 selected_model.evaluate_classification_performance()
                 _ = input("[?] Press any key to continue >> ")
                 clear_console = True
-        elif selected_option == 8:
+        elif selected_option == 7:
             print()
             if selected_model is None:
                 print("[*] No model selected.")
