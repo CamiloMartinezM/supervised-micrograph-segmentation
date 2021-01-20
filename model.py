@@ -43,23 +43,10 @@ from utils_functions import (
 
 warnings.simplefilter("ignore", category=NumbaWarning)
 
-src = ""
 
-labeled = "Anotadas"
-preprocessed = "Preprocesadas"
-
-# The following constants represent directories of interest.
-# The folder where the annotated micrographs are and the one where all the
-# pre-processed micrographs are. The latter will have two images for each
-# of the micrographs: the first one represents the micrograph without the scale,
-# which generally appears in the lower section of the image, and the second one
-# is precisely the latter (which naturally has the information regarding the
-# scale).
-PATH_LABELED = os.path.join(src, labeled)
-PATH_PREPROCESSED = os.path.join(src, preprocessed)
-
-
-def load_scales() -> dict:
+def load_scales(
+    path_labeled: str, path_preprocessed: str, load_full_preprocessed: bool = False
+) -> dict:
     """Loads the scale of the images by going to PREPROCESSED and finding the
     corresponding SCALE image of every image in LABELED.
 
@@ -68,7 +55,11 @@ def load_scales() -> dict:
               scale pixel length.
     """
     print("\n[*] SCALES EXTRACTION:\n")
-    myScaler = Scaler(PATH_LABELED, PATH_PREPROCESSED)
+    if load_full_preprocessed:
+        myScaler = Scaler(path_preprocessed, path_preprocessed)
+    else:
+        myScaler = Scaler(path_labeled, path_preprocessed)
+
     myScaler.process()
     scales = myScaler.scales
 
@@ -81,7 +72,7 @@ def load_scales() -> dict:
     return scales
 
 
-def load_imgs(exclude: list = []) -> tuple:
+def load_imgs(imgs_path: str, exclude: list = []) -> tuple:
     """Loads images in LABELED in a numpy array.
 
     Args:
@@ -91,24 +82,30 @@ def load_imgs(exclude: list = []) -> tuple:
         tuple: Numpy array with all images, dictionary whose keys are names of images 
                and values are the corresponding indeces in the numpy array of images.
     """
-    print("\n[*] IMAGES LOADING:\n")
     m = []
     index_to_name = {}  # Every name will have its corresponding position in m.
     count = 0
-    for folder in os.listdir(PATH_LABELED):
-        if os.path.isdir(os.path.join(PATH_LABELED, folder)):
-            if folder in exclude:
-                continue
+    for path, _, files in os.walk(imgs_path):
+        print(f"[+] Currently reading: {path}")
+        for folder_to_exclude in exclude:
+            if folder_to_exclude in path:
+                print(" └── Excluded from search.")
+                break
+        else:
+            filtered_files = [
+                f for f in files if f.endswith(".png") and not f.startswith("SCALE")
+            ]
+            bullet = " ├── "
+            for i, f in enumerate(filtered_files):
+                if i == len(filtered_files) - 1:
+                    bullet = " └── "
 
-            print(f"[?] Currently reading folder: {folder}")
-            for f in os.listdir(os.path.join(PATH_LABELED, folder)):
-                if f.endswith(".png"):
-                    print(f"\t Reading and loading {f}... ", end="")
-                    img = load_img(os.path.join(PATH_LABELED, folder, f))
-                    m.append(img)
-                    index_to_name[f] = count
-                    count += 1
-                    print("Done")
+                print(bullet + f"Reading and loading {f}... ", end="")
+                img = load_img(os.path.join(path, f))
+                m.append(img)
+                index_to_name[f] = count
+                count += 1
+                print("Done")
 
     return np.array(m), index_to_name
 
@@ -178,7 +175,7 @@ def get_array_of_micrograph(
 
 
 def extract_labeled_windows(
-    micrographs: dict, index_to_name: dict, exclude: list = []
+    path_labeled: str, micrographs: dict, index_to_name: dict, exclude: list = []
 ) -> tuple:
     """Within LABELED, each of the images has a .txt file associated with it that
     contains the information of the position of each of its regions or windows that
@@ -228,78 +225,74 @@ def extract_labeled_windows(
         else:  # Ignored labels
             return None
 
-    print("\n[*] LABELED WINDOWS EXTRACTION:\n")
     labels = {}  # Counts number of labels/annotations per label.
     windows_per_label = {}  # key = label, value = list of windows
     windows_per_name = {}  # key = filename, value = [(coords, window, label)]
 
-    for folder in os.listdir(PATH_LABELED):
-        if os.path.isdir(os.path.join(PATH_LABELED, folder)):
-            if folder in exclude:
-                continue
+    for path, _, files in os.walk(path_labeled):
+        print(f"[+] Currently reading: {path}")
+        for folder_to_exclude in exclude:
+            if folder_to_exclude in path:
+                print(" └── Excluded from search.")
+                break
+        else:
+            filtered_files = [f for f in files if f.endswith(".txt")]
+            bullet = " ├── "
+            for i, f in enumerate(filtered_files):
+                if i == len(filtered_files) - 1:
+                    bullet = " └── "
 
-            print(f"[?] Currently reading folder: {folder}")
-            for f in os.listdir(os.path.join(PATH_LABELED, folder)):
-                if f.endswith(".txt"):
-                    img_name = f[:-4] + ".png"
-                    print(f"\t Getting windows of {img_name}... ", end="")
-                    full_img = get_array_of_micrograph(
-                        img_name, micrographs, index_to_name
-                    )  # Loads full img from micrographs array
+                img_name = f[:-4] + ".png"
+                print(bullet + f"Getting windows of {img_name}... ", end="")
+                full_img = get_array_of_micrograph(
+                    img_name, micrographs, index_to_name
+                )  # Loads full img from micrographs array
 
-                    with open(
-                        os.path.join(PATH_LABELED, folder, f), "r"
-                    ) as annotations:
+                with open(os.path.join(path, f), "r") as annotations:
+                    line = annotations.readline()
+                    while len(line) > 0:
+                        line_parts = line.split(" ")
+                        label = line_parts[0]
+                        k = 1
+                        while k < len(line_parts):
+                            try:
+                                int(
+                                    float(line_parts[k])
+                                )  # Added float because int('0.0') does not work
+                                break
+                            except:  # is string
+                                label += " " + line_parts[k]
+                            k += 1
+
+                        offset = k - 1
+                        label = check_label(label)
+                        if label is not None:
+                            labels[label] = labels.get(label, 0) + 1
+                            first_point = tuple(
+                                [int(x) for x in line_parts[4 + offset : 6 + offset]]
+                            )
+                            second_point = tuple(
+                                [int(x) for x in line_parts[6 + offset : 8 + offset]]
+                            )
+                            assert (first_point and second_point) != (0, 0)
+                            window = slice_by_corner_coords(
+                                full_img, first_point, second_point
+                            )
+
+                            if img_name not in windows_per_name:
+                                windows_per_name[img_name] = []
+
+                            windows_per_name[img_name].append(
+                                ((first_point, second_point), window, label)
+                            )
+
+                            if label not in windows_per_label:
+                                windows_per_label[label] = []
+                            windows_per_label[label].append((img_name, window))
+                        # print("Done")
                         line = annotations.readline()
-                        while len(line) > 0:
-                            line_parts = line.split(" ")
-                            label = line_parts[0]
-                            k = 1
-                            while k < len(line_parts):
-                                try:
-                                    int(
-                                        float(line_parts[k])
-                                    )  # Added float because int('0.0') does not work
-                                    break
-                                except:  # is string
-                                    label += " " + line_parts[k]
-                                k += 1
 
-                            offset = k - 1
-                            label = check_label(label)
-                            if label is not None:
-                                labels[label] = labels.get(label, 0) + 1
-                                first_point = tuple(
-                                    [
-                                        int(x)
-                                        for x in line_parts[4 + offset : 6 + offset]
-                                    ]
-                                )
-                                second_point = tuple(
-                                    [
-                                        int(x)
-                                        for x in line_parts[6 + offset : 8 + offset]
-                                    ]
-                                )
-                                assert (first_point and second_point) != (0, 0)
-                                window = slice_by_corner_coords(
-                                    full_img, first_point, second_point
-                                )
-
-                                if img_name not in windows_per_name:
-                                    windows_per_name[img_name] = []
-
-                                windows_per_name[img_name].append(
-                                    ((first_point, second_point), window, label)
-                                )
-
-                                if label not in windows_per_label:
-                                    windows_per_label[label] = []
-                                windows_per_label[label].append((img_name, window))
-                            # print("Done")
-                            line = annotations.readline()
-
-                    print("Done")
+                print("Done")
 
     print_table_from_dict(
         labels, cols=["Label", "Number"], title="Number of windows per label",
@@ -309,7 +302,10 @@ def extract_labeled_windows(
 
 
 def filterbank_example(
-    img: str = "cs0328.png", dpi: int = 80, filterbank_name: str = "MR8"
+    path_labeled: str,
+    img: str = "cs0328.png",
+    dpi: int = 80,
+    filterbank_name: str = "MR8",
 ) -> None:
     """Plots an example of the chosen filterbank.
 
@@ -322,7 +318,7 @@ def filterbank_example(
     MR8.plot_filters()
 
     # Example
-    img = load_img(find_path_of_img(img, PATH_LABELED))
+    img = load_img(find_path_of_img(img, path_labeled))
     response = MR8.response(img)
 
     # Original image
@@ -331,8 +327,9 @@ def filterbank_example(
     plt.figure(dpi=dpi)
     plt.imshow(img, cmap="gray")
     plt.axis("off")
-    plt.show()
-    plt.close()
+    plt.pause(0.05)
+    # plt.show()
+    # plt.close()
 
     # Plot responses
     print("")
@@ -344,8 +341,9 @@ def filterbank_example(
         axes.set_xticks(())
         axes.set_yticks(())
     ax2[-1, -1].set_visible(False)
-    plt.show()
     fig2.tight_layout()
+    plt.pause(0.05)
+    # plt.show()
 
 
 def slice_by_corner_coords(
@@ -439,7 +437,7 @@ def get_feature_vector_of_window(
         return response_img, num_pixels
 
 
-def get_feature_vectors_of_labels(
+def feature_vectors_from_windows(
     windows: dict, verbose: bool = True, filterbank_name: str = "MR8"
 ) -> dict:
     """Each pixel of each annotated window has 8 responses associated with the filters 
@@ -501,12 +499,38 @@ def get_feature_vectors_of_labels(
     return feature_vectors_of_label
 
 
+def obtain_feature_vectors_of_labels(
+    windows_train: dict, filterbank: str, windows_dev: dict = None, verbose: bool = True
+) -> dict:
+    """Obtains the feature vectors of the labels present in the given windows.
+
+    Args:
+        windows_train (dict): Training set.
+        windows_dev (dict, optional): Development set. If it is not None, it is included
+                                        on training. Defaults to None.
+
+    Returns:
+        dict: Feature_vectors of labels.
+    """
+    # Feature vector extraction per label on training set
+    if windows_dev is not None:
+        windows_to_train_on = {}
+        for k, v in chain(windows_train.items(), windows_dev.items()):
+            windows_to_train_on.setdefault(k, []).extend(v)
+
+        windows_train = windows_to_train_on
+
+    feature_vectors_of_label = feature_vectors_from_windows(
+        windows_train, verbose=verbose, filterbank_name=filterbank
+    )
+
+    return feature_vectors_of_label
+
+
 def train(
     K: int,
-    windows_train: dict,
     filterbank_name: str,
-    windows_dev: dict = None,
-    precomputed_feature_vectors: dict = None,
+    feature_vectors: dict,
     minibatch_size: int = None,
     compute_clustering_entropy: bool = False,
     verbose: bool = True,
@@ -533,43 +557,27 @@ def train(
         tuple: feature_vectors (dict), classes (list), texton matrix (np.ndarray) and
                 clustering entropy (dict).
     """
-    print("\n[*] TRAINING:\n")
-
-    # Feature vector extraction per label on training set
-    if precomputed_feature_vectors is not None:
-        feature_vectors_of_label = precomputed_feature_vectors
-    else:
-        if windows_dev is not None:
-            windows_to_train_on = {}
-            for k, v in chain(windows_train.items(), windows_dev.items()):
-                windows_to_train_on.setdefault(k, []).extend(v)
-
-            windows_train = windows_to_train_on
-
-        feature_vectors_of_label = get_feature_vectors_of_labels(
-            windows_train, verbose=verbose, filterbank_name=filterbank_name
-        )
-
     classes = np.asarray(
-        list(feature_vectors_of_label.keys())
+        list(feature_vectors.keys())
     )  # Number of classes/labels
     C = len(classes)
 
     print_table_from_dict(
-        feature_vectors_of_label, cols=["Label", "Shape of feature vector"]
+        feature_vectors, cols=["Label", "Shape of feature vector"]
     )
+    print("")
 
     textons = {}
     clustering_entropy = {}
-    for label in feature_vectors_of_label:
+    for label in feature_vectors:
         print(f"[?] Computing K-means on feature vector of label: {label}... ")
         if minibatch_size is not None:
             textons[label] = MiniBatchKMeans(n_clusters=K).fit(
-                feature_vectors_of_label[label]
+                feature_vectors[label]
             )
         else:
             textons[label] = CumlKMeans(n_clusters=K, output_type="numpy").fit(
-                np2cudf(feature_vectors_of_label[label])
+                np2cudf(feature_vectors[label])
             )
 
         print(
@@ -589,12 +597,12 @@ def train(
     # each column has the texton k for k < K. Note that said texton must have 8
     # dimensions, since the pixels were represented precisely by 8 dimensions.
     T = np.zeros(
-        (C, K, feature_vectors_of_label[classes[0]].shape[-1]), dtype=np.float64
+        (C, K, feature_vectors[classes[0]].shape[-1]), dtype=np.float64
     )
     for i, label in enumerate(classes):
         T[i] = textons[label].cluster_centers_
 
-    return feature_vectors_of_label, classes, T, clustering_entropy
+    return classes, T, clustering_entropy
 
 
 @jit
@@ -745,8 +753,9 @@ def segment(
         plt.imshow(test_img, cmap="gray")
         plt.axis("off")
         plt.tight_layout()
-        plt.show()
-        plt.close()
+        plt.pause(0.05)
+        # plt.show()
+        # plt.close()
 
     if plot_superpixels:
         print("\nSuperpixels:")
@@ -811,7 +820,7 @@ def segment(
 
     present_classes_idxs, pixel_counts = np.unique(class_matrix, return_counts=True)
     present_classes = new_classes[
-        present_classes_idxs.min() : present_classes_idxs.max()+1
+        present_classes_idxs.min() : present_classes_idxs.max() + 1
     ]
     segmentation_pixel_counts = dict(zip(present_classes, pixel_counts))
 
@@ -943,8 +952,9 @@ def visualize_segmentation(
     if save_png:
         plt.savefig(png_name, bbox_inches=0, dpi=dpi)
 
-    plt.show()
-    plt.close()
+    plt.pause(0.05)
+    # plt.show()
+    # plt.close()
 
 
 def segmentation_to_class_matrix(
@@ -1109,7 +1119,6 @@ def evaluate_classification_performance(
             print("Done")
             return stats
 
-    print("\n[*] CLASSIFICATION PERFORMANCE:\n")
     constant_title = f"(classification) K={K}"
     metrics = {}
     metrics["Train"] = helper(
@@ -1125,7 +1134,7 @@ def evaluate_classification_performance(
 
 
 def load_ground_truth(
-    tif_file: str, classes: np.ndarray, folder: str = "Hypoeutectoid steel"
+    path_ground_truth: str, tif_file: str, classes: np.ndarray
 ) -> dict:
     """Obtains a dictionary of ground truth images, where keys are names of images
     and values are the corresponding ground truth images. This is the ground truth
@@ -1148,11 +1157,7 @@ def load_ground_truth(
         ground_truth_img = ground_truth_imgs[i, :, :].astype(int)
         ground_truth[i, :, :] = make_classes_consistent(ground_truth_img, classes)
 
-    l = [
-        f
-        for f in sorted(os.listdir(os.path.join(PATH_LABELED, folder)))
-        if f.endswith(".png")
-    ]
+    l = [f for f in sorted(os.listdir(path_ground_truth)) if f.endswith(".png")]
     return dict(zip(l, ground_truth))
 
 
@@ -1199,11 +1204,7 @@ def make_classes_consistent(
 
 
 def plot_image_with_ground_truth(
-    name: str,
-    ground_truth: dict,
-    src: str = PATH_LABELED,
-    dpi: int = 80,
-    alpha: int = 0.5,
+    name: str, ground_truth: dict, src: str, dpi: int = 80, alpha: int = 0.5,
 ) -> None:
     """Plots an image given its name with its ground truth segmentation as an overlay.
 
@@ -1217,8 +1218,9 @@ def plot_image_with_ground_truth(
     plt.figure(dpi=dpi)
     plt.imshow(load_img(find_path_of_img(name, src)), cmap="gray")
     plt.imshow(ground_truth[name], alpha=alpha)
-    plt.show()
-    plt.close()
+    plt.pause(0.05)
+    # plt.show()
+    # plt.close()
 
 
 def segmentation_metrics(
@@ -1229,8 +1231,8 @@ def segmentation_metrics(
     algorithm: str,
     algorithm_parameters: tuple,
     filterbank_name: str,
+    src: str,
     max_test_number: int = -1,
-    src: str = PATH_LABELED,
 ) -> np.ndarray:
     """Obtains the confusion matrix for segmentation. Essentially, this method compares
     the segmentation of images in training, development or test set with the provided

@@ -250,16 +250,20 @@ def train_dev_test_split_table(train: dict, dev: dict, test: dict) -> None:
 
     for label in sorted(
         train.keys(),
-        key=lambda x: len(train[x]) + len(dev[x]) + len(test[x]),
+        key=lambda x: len(train.get(x, []))
+        + len(dev.get(x, []))
+        + len(test.get(x, [])),
         reverse=True,
     ):
         table.add_row(
             [
                 label,
-                len(train[label]),
-                len(dev[label]),
-                len(test[label]),
-                len(train[label]) + len(dev[label]) + len(test[label]),
+                len(train.get(label, [])),
+                len(dev.get(label, [])),
+                len(test.get(label, [])),
+                len(train.get(label, []))
+                + len(dev.get(label, []))
+                + len(test.get(label, [])),
             ]
         )
 
@@ -288,8 +292,9 @@ def plot_confusion_matrix(
     fig = matrix.plot(
         cmap=plt.cm.Reds, number_label=True, normalized=normalized, one_vs_all=True
     )
-    plt.show()
-    plt.close()
+    plt.pause(0.05)
+    # plt.show()
+    # plt.close()
 
     if save_png:
         fig.figure.savefig(title + ".png", bbox_inches="tight", dpi=dpi)
@@ -657,7 +662,7 @@ def adjust_labels(segmentation_pixel_counts: dict) -> dict:
             "proeutectoid ferrite"
         ]
         del segmentation_pixel_counts["proeutectoid ferrite"]
-        
+
     if "pearlite" in segmentation_pixel_counts:
         if "ferrite" in segmentation_pixel_counts:
             segmentation_pixel_counts["Pearlite (ferrite + cementite)"] = (
@@ -668,7 +673,7 @@ def adjust_labels(segmentation_pixel_counts: dict) -> dict:
                 "ferrite"
             ]
             del segmentation_pixel_counts["ferrite"]
-            
+
         segmentation_pixel_counts["> Cementite"] = segmentation_pixel_counts["pearlite"]
         del segmentation_pixel_counts["pearlite"]
 
