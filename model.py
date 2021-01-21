@@ -26,6 +26,7 @@ from sklearn.cluster import MiniBatchKMeans
 
 from utils_classes import FilterBank, Scaler, SuperpixelSegmentation
 from utils_functions import (
+    calculate_spacing,
     find_path_of_img,
     formatter,
     get_folder,
@@ -38,7 +39,6 @@ from utils_functions import (
     plot_confusion_matrix,
     print_table_from_dict,
     statistics_from_matrix,
-    calculate_spacing,
 )
 
 warnings.simplefilter("ignore", category=NumbaWarning)
@@ -79,7 +79,7 @@ def load_imgs(imgs_path: str, exclude: list = []) -> tuple:
         exclude (list, optional): Folders to exclude in loading. Defaults to [].
 
     Returns:
-        tuple: Numpy array with all images, dictionary whose keys are names of images 
+        tuple: Numpy array with all images, dictionary whose keys are names of images
                and values are the corresponding indeces in the numpy array of images.
     """
     m = []
@@ -295,7 +295,9 @@ def extract_labeled_windows(
                 print("Done")
 
     print_table_from_dict(
-        labels, cols=["Label", "Number"], title="Number of windows per label",
+        labels,
+        cols=["Label", "Number"],
+        title="Number of windows per label",
     )
 
     return labels, windows_per_label, windows_per_name
@@ -363,7 +365,7 @@ def slice_by_corner_coords(
 
 
 def get_response_vector(img: np.ndarray, filterbank_name: str = "MR8") -> np.ndarray:
-    """Convolves the input image with the MR8 Filter Bank to get its response as a 
+    """Convolves the input image with the MR8 Filter Bank to get its response as a
     numpy array.
 
     Args:
@@ -389,15 +391,15 @@ def get_response_vector(img: np.ndarray, filterbank_name: str = "MR8") -> np.nda
 
 def concatenate_responses(responses: np.ndarray) -> np.ndarray:
     """Helper function to obtain the complete feature vector of a label by concatenating
-    all responses of images with the same label, so that a single matrix is obtained in 
-    which a row corresponds to a single pixel and each pixel possesses 8 dimensions, 
+    all responses of images with the same label, so that a single matrix is obtained in
+    which a row corresponds to a single pixel and each pixel possesses 8 dimensions,
     because of the MR8 Filter Bank.
 
     Args:
         responses (np.ndarray): Numpy array of responses.
 
     Returns:
-        np.ndarray: Numpy array of all responses, where a row corresponds to a single 
+        np.ndarray: Numpy array of all responses, where a row corresponds to a single
                     pixel feature vector.
     """
     return np.concatenate(
@@ -417,9 +419,9 @@ def get_feature_vector_of_window(
 
     Args:
         window (np.ndarray): Image as a numpy array.
-        ravel (bool, optional): Specifies whether to flatten the feature vectors of an 
-                                image, so that each row is the feature vector of a 
-                                single pixel. If this parameter is True, the output will 
+        ravel (bool, optional): Specifies whether to flatten the feature vectors of an
+                                image, so that each row is the feature vector of a
+                                single pixel. If this parameter is True, the output will
                                 be reshaped to the original image shape.
     Returns:
         tuple: Feature vector of the given window and the number of pixels whose feature
@@ -440,12 +442,12 @@ def get_feature_vector_of_window(
 def feature_vectors_from_windows(
     windows: dict, verbose: bool = True, filterbank_name: str = "MR8"
 ) -> dict:
-    """Each pixel of each annotated window has 8 responses associated with the filters 
-    used. These responses must be unified in some way, since they are part of the same 
-    class. Therefore, the following implementation transforms each of the responses 
-    obtained per window into a matrix where each row is a pixel of an annotation. And, 
+    """Each pixel of each annotated window has 8 responses associated with the filters
+    used. These responses must be unified in some way, since they are part of the same
+    class. Therefore, the following implementation transforms each of the responses
+    obtained per window into a matrix where each row is a pixel of an annotation. And,
     since each of the annotations has 8 associated responses, each pixel is represented
-    by an 8-dimensional vector. This means that each row will have 8 columns, 
+    by an 8-dimensional vector. This means that each row will have 8 columns,
     corresponding to the value obtained from the filter. On the other hand, since there
     are several classes, said matrix will be stored in a dictionary, whose keys will be
     the classes found.
@@ -455,7 +457,7 @@ def feature_vectors_from_windows(
         verbose (bool): True is additional information is needed. Defaults to True.
 
     Returns:
-        dict: Dictionary of feature vectors per label. Keys corresponds to labels and 
+        dict: Dictionary of feature vectors per label. Keys corresponds to labels and
               values are the feature vectors of that label.
     """
     feature_vectors_of_label = {}
@@ -557,14 +559,10 @@ def train(
         tuple: feature_vectors (dict), classes (list), texton matrix (np.ndarray) and
                 clustering entropy (dict).
     """
-    classes = np.asarray(
-        list(feature_vectors.keys())
-    )  # Number of classes/labels
+    classes = np.asarray(list(feature_vectors.keys()))  # Number of classes/labels
     C = len(classes)
 
-    print_table_from_dict(
-        feature_vectors, cols=["Label", "Shape of feature vector"]
-    )
+    print_table_from_dict(feature_vectors, cols=["Label", "Shape of feature vector"])
     print("")
 
     textons = {}
@@ -572,9 +570,7 @@ def train(
     for label in feature_vectors:
         print(f"[?] Computing K-means on feature vector of label: {label}... ")
         if minibatch_size is not None:
-            textons[label] = MiniBatchKMeans(n_clusters=K).fit(
-                feature_vectors[label]
-            )
+            textons[label] = MiniBatchKMeans(n_clusters=K).fit(feature_vectors[label])
         else:
             textons[label] = CumlKMeans(n_clusters=K, output_type="numpy").fit(
                 np2cudf(feature_vectors[label])
@@ -596,9 +592,7 @@ def train(
     # construct a matrix T of shape (C, K, 8) where each of the rows is a class and
     # each column has the texton k for k < K. Note that said texton must have 8
     # dimensions, since the pixels were represented precisely by 8 dimensions.
-    T = np.zeros(
-        (C, K, feature_vectors[classes[0]].shape[-1]), dtype=np.float64
-    )
+    T = np.zeros((C, K, feature_vectors[classes[0]].shape[-1]), dtype=np.float64)
     for i, label in enumerate(classes):
         T[i] = textons[label].cluster_centers_
 
@@ -636,7 +630,7 @@ def get_distance_matrix(feature_vectors: np.ndarray, T: np.ndarray) -> np.ndarra
 
     Returns:
         np.ndarray: Matrix of shape (C, NUM_PIXELS, K). Every (i, j, k) matrix value
-                    corresponds to the distance from the i-th pixel to the k-th texton 
+                    corresponds to the distance from the i-th pixel to the k-th texton
                     of the j-th class.
     """
     return np.linalg.norm(feature_vectors[:, np.newaxis] - T[:, np.newaxis, :], axis=-1)
@@ -664,7 +658,8 @@ def predict_class_of(
     # Matrix which correlates texture texton distances and minimum distances of every
     # pixel.
     A = np.sum(
-        np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09), axis=-1,
+        np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09),
+        axis=-1,
     )
     A_i = A.sum(axis=1)  # Sum over rows (i.e, over all pixels).
     ci = A_i.argmax(axis=0)  # Class with maximum probability of occurrence is chosen.
@@ -835,18 +830,18 @@ def sub_segment(
     classes: np.ndarray,
     binary_mapping: dict,
 ) -> tuple:
-    """Subsegments a class of an input image. The resulting new class must be brighter 
+    """Subsegments a class of an input image. The resulting new class must be brighter
     than the original class, which is subsegmented.
 
     Args:
         img (np.ndarray): Input image.
-        segments (np.ndarray): Class matrix; segmented array where each value 
+        segments (np.ndarray): Class matrix; segmented array where each value
                                corresponds to a class/label.
-        class_to_subsegment (int): Value in segments of the class which is going to be 
+        class_to_subsegment (int): Value in segments of the class which is going to be
                                    subsegmented.
         name_of_resulting_class (str): Name of the resulting new class.
         classes (np.ndarray): Array of classes/labels.
-        binary_mapping (dict): Tells which value in segments will correspond to which 
+        binary_mapping (dict): Tells which value in segments will correspond to which
                                class.
 
     Returns
@@ -876,7 +871,7 @@ def calculate_interlamellar_spacing(
     dpi: int = 120,
 ) -> float:
     pearlite_class_idx = np.where(classes == "pearlite")[0][0]
-    
+
     if preprocess:
         preprocessed_img = original_img  # TODO
     else:
@@ -891,10 +886,10 @@ def calculate_interlamellar_spacing(
 
     plt.figure(figsize=(10, 8), dpi=100)
     plt.imshow(img, cmap="gray")
-    plt.axis('off')
+    plt.axis("off")
     plt.tight_layout()
     plt.pause(0.05)
-    
+
     return calculate_spacing(img, img_name=img_name, save_plots=save_plots, dpi=dpi)
 
 
@@ -911,7 +906,7 @@ def visualize_segmentation(
     Args:
         original_img (np.ndarray): Numpy array associated with the original image.
         classes (np.ndarray): Array of classes/labels.
-        segments (np.ndarray): Class matrix; segmented array where each value 
+        segments (np.ndarray): Class matrix; segmented array where each value
                                corresponds to a class/label.
         dpi (int, optional): DPI for plotted figure. Defaults to 120.
     """
@@ -975,7 +970,7 @@ def segmentation_to_class_matrix(
         S (dict): Dictionary of initially extracted superpixels.
         S_segmented (dict): Segmentation result.
         shape (tuple): Image shape.
-        as_int (bool): True if the desired matrix must have integers as the 
+        as_int (bool): True if the desired matrix must have integers as the
                        corresponding class. Defaults to False.
     Returns:
         np.ndarray: Class matrix.
@@ -1110,7 +1105,10 @@ def evaluate_classification_performance(
             cm.relabel(mapping=mapping)
             print("Done")
             plot_confusion_matrix(
-                cm, normalized=normalized, title=img_filename, save_png=save_png,
+                cm,
+                normalized=normalized,
+                title=img_filename,
+                save_png=save_png,
             )
             if save_xlsx:
                 print(" ├── Exporting to excel... ", end="")
@@ -1211,7 +1209,11 @@ def make_classes_consistent(
 
 
 def plot_image_with_ground_truth(
-    name: str, ground_truth: dict, src: str, dpi: int = 80, alpha: int = 0.5,
+    name: str,
+    ground_truth: dict,
+    src: str,
+    dpi: int = 80,
+    alpha: int = 0.5,
 ) -> None:
     """Plots an image given its name with its ground truth segmentation as an overlay.
 
@@ -1268,7 +1270,7 @@ def segmentation_metrics(
     jaccard_per_img = {}
     for k, name in enumerate(imgs):
         if k == len(imgs) - 1:
-            bullet = " └── " 
+            bullet = " └── "
             branch = "   "
         else:
             bullet = " ├── "
@@ -1292,11 +1294,16 @@ def segmentation_metrics(
             print(f" │\t{branch}   ├── Calculating confusion matrix... ", end="")
             matrix = ConfusionMatrix(y_true, y_pred, transpose=True)
         else:
-            print(f" │\t{branch}   ├── Combining confusion matrix with previous one... ", end="")
+            print(
+                f" │\t{branch}   ├── Combining confusion matrix with previous one... ",
+                end="",
+            )
             matrix = matrix.combine(ConfusionMatrix(y_true, y_pred, transpose=True))
 
         print("Done")
-        print(f" │\t{branch}   └── Calculating Jaccard Index for this image... ", end="")
+        print(
+            f" │\t{branch}   └── Calculating Jaccard Index for this image... ", end=""
+        )
         jaccard_per_img[name] = jaccard_index_from_ground_truth(
             segmented_img_as_matrix, ground_truth[name], classes
         )
@@ -1378,12 +1385,19 @@ def evaluate_segmentation_performance(
         title = f"Confusion matrix (segmentation), K = {K}"
 
     plot_confusion_matrix(
-        cm, normalized=True, title=title, dpi=dpi, save_png=save_png,
+        cm,
+        normalized=True,
+        title=title,
+        dpi=dpi,
+        save_png=save_png,
     )
     if save_xlsx:
         print(" ├── Exporting to excel... ", end="")
         matrix_to_excel(
-            cm_array, classes.tolist(), sheetname=f"K = {K}", filename="Segmentation",
+            cm_array,
+            classes.tolist(),
+            sheetname=f"K = {K}",
+            filename="Segmentation",
         )
         print("Done")
     print(" └── Computing metrics... ", end="")
