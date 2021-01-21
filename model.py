@@ -876,6 +876,7 @@ def calculate_interlamellar_spacing(
     dpi: int = 120,
 ) -> float:
     pearlite_class_idx = np.where(classes == "pearlite")[0][0]
+    
     if preprocess:
         preprocessed_img = original_img  # TODO
     else:
@@ -883,11 +884,17 @@ def calculate_interlamellar_spacing(
 
     if highlight_pearlite:
         img = highlight_class_in_img(
-            preprocessed_img, segmented_img, class_=pearlite_class_idx, fill_value=0
+            preprocessed_img, segmented_img, class_=pearlite_class_idx
         )
     else:
         img = preprocessed_img
 
+    plt.figure(figsize=(10, 8), dpi=100)
+    plt.imshow(img, cmap="gray")
+    plt.axis('off')
+    plt.tight_layout()
+    plt.pause(0.05)
+    
     return calculate_spacing(img, img_name=img_name, save_plots=save_plots, dpi=dpi)
 
 
@@ -949,10 +956,10 @@ def visualize_segmentation(
 
     plt.tight_layout(w_pad=100)
     plt.axis("off")
+    plt.pause(0.05)
     if save_png:
         plt.savefig(png_name, bbox_inches=0, dpi=dpi)
 
-    plt.pause(0.05)
     # plt.show()
     # plt.close()
 

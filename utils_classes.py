@@ -211,8 +211,9 @@ class SuperpixelSegmentation:
         plt.imshow(mark_boundaries(image, segments))
         plt.axis("off")
         plt.tight_layout()
-        plt.show()
-        plt.close()
+        plt.pause(0.05)
+        # plt.show()
+        # plt.close()
         return None
 
 

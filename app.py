@@ -160,7 +160,9 @@ class SegmentationModel:
             "[?] Predict mechanical properties?", ["yes", "no"], default="yes"
         )
         if predict == "yes":
-            SegmentationModel.predict_mechanical_properties(volume_fractions, interlaminar_spacing)
+            SegmentationModel.predict_mechanical_properties(
+                volume_fractions, interlaminar_spacing
+            )
 
     @staticmethod
     def predict_mechanical_properties(volume_fractions: dict, spacings: dict) -> None:
@@ -204,11 +206,12 @@ class SegmentationModel:
                 """
             )
         )
-        if volume_fractions.get("ferrite", 0) <= 0.1:  # pearlitic steel
+        if (
+            "ferrite" in volume_fractions
+            and volume_fractions["ferrite"]["percentage area"] <= 0.1
+        ):  # pearlitic steel
             p_C = _get_simple_numerical_entry("[?] %C", "float")
-            p_Si = _get_simple_numerical_entry(
-                "[?] %Si", "float", default_value=0
-            )
+            p_Si = _get_simple_numerical_entry("[?] %Si", "float", default_value=0)
             steels = {}
             for method in spacings:
                 steels[method] = Material(
@@ -219,19 +222,11 @@ class SegmentationModel:
                 )
         else:  # plain-carbon steel
             p_C = _get_simple_numerical_entry("[?] %C", "float")
-            p_Mn = _get_simple_numerical_entry(
-                "[?] %Mn", "float", default_value=0
-            )
+            p_Mn = _get_simple_numerical_entry("[?] %Mn", "float", default_value=0)
             D_a = _get_simple_numerical_entry("[?] D_α, µm", "float", default_value=0)
-            p_N = _get_simple_numerical_entry(
-                "[?] %N", "float", default_value=0
-            )
-            p_P = _get_simple_numerical_entry(
-                "[?] %P", "float", default_value=0
-            )
-            p_Si = _get_simple_numerical_entry(
-                "[?] %Si", "float", default_value=0
-            )
+            p_N = _get_simple_numerical_entry("[?] %N", "float", default_value=0)
+            p_P = _get_simple_numerical_entry("[?] %P", "float", default_value=0)
+            p_Si = _get_simple_numerical_entry("[?] %Si", "float", default_value=0)
             steels = {}
             for method in spacings:
                 steels[method] = Material(
@@ -251,7 +246,7 @@ class SegmentationModel:
                 "Yield Strength [MPa]": steel.sigma_y,
                 "Tensile Strength [MPa]": steel.sigma_u,
             }
-            
+
         print_mechanical_properties_table(mechanical_properties, spacings)
 
     def evaluate_classification_performance(self) -> None:
@@ -432,8 +427,11 @@ def _get_simple_numerical_entry(
     try:
         entry_str = input(complete_msg)
         if entry_str.strip() == "":
-            if default_value is not None or (default_value is None and return_None):
+            if return_None:
                 entry = default_value
+            else:
+                if default_value is not None:
+                    entry = default_value
         elif entry_str.strip() == "":
             raise Exception("Empty string")
         else:
@@ -612,7 +610,7 @@ def _select_image(folder: str) -> str:
         else:
             img_name = files_dict[resp]
 
-        return os.path.relpath(os.path.join(folder, img_name), start=os.getcwd())
+        return os.path.relpath(os.path.join(path, img_name), start=os.getcwd())
 
 
 def _take_option(selected_stuff: tuple) -> int:
@@ -1031,7 +1029,7 @@ def load_new_model() -> SegmentationModel:
                 loaded_elements["Parameters"] = True
             elif selected_option == 5:
                 scales = _load_default_scales_dictionary()
-                loaded_elements["Scales"] = True
+                loaded_elements["Scales Information"] = True
                 parameters["scales"] = scales
                 _create_title("Segmentation Model creation tool")
                 tool_menu(section, loaded_elements)
@@ -1146,13 +1144,13 @@ def load_new_model() -> SegmentationModel:
     _ = input("[?] Press any key to continue >> ")
     if parameters["windows_train"] is None:  # Default feature vectors were used
         parameters["windows_train"] = load_variable_from_file(
-            "windows_train", "saved_variables"
+            "training_windows", "saved_variables"
         )
         parameters["windows_dev"] = load_variable_from_file(
-            "windows_dev", "saved_variables"
+            "development_windows", "saved_variables"
         )
         parameters["windows_test"] = load_variable_from_file(
-            "windows_test", "saved_variables"
+            "testing_windows", "saved_variables"
         )
         parameters["training_set"] = load_variable_from_file(
             "training_set_imgs", "saved_variables"
@@ -1283,16 +1281,19 @@ def main():
             else:
                 print("\n[+] Chosen folder: ", imgs_folder)
 
-            sleep(2)
+            sleep(1)
             clear_console = True
         elif selected_option == 2:
             img_name = _select_image(imgs_folder)
             if img_name is None:
                 print("[*] No image selected.")
+            elif Path(img_name).suffix not in SUPPORTED_IMAGE_FORMATS:
+                print("[*] That does not seem to be a supported file extension.")
+                img_name = None
             else:
                 print("\n[+] Chosen image: ", img_name)
 
-            sleep(2)
+            sleep(1)
             clear_console = True
         elif selected_option == 3:
             selected_model = load_final_model()
