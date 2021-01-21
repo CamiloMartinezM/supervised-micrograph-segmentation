@@ -10,8 +10,8 @@ import os
 import pickle
 import random
 import textwrap
-from pprint import pprint
 from copy import deepcopy
+from pprint import pprint
 
 import cudf
 import cv2
@@ -210,10 +210,18 @@ def print_table_from_dict(
     characteristic_value = list(data.values())[0]
 
     if type(characteristic_value) is np.ndarray:
-        for label in sorted(data.keys(), key=lambda x: data[x].shape[0], reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: data[x].shape[0],
+            reverse=True,
+        ):
             table.add_row([label, f"{data[label].shape}"])
     elif type(characteristic_value) is list:
-        for label in sorted(data.keys(), key=lambda x: len(data[x]), reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: len(data[x]),
+            reverse=True,
+        ):
             table.add_row([label, f"{len(data[label])}"])
     else:  # int
         for label in data.keys():
@@ -579,7 +587,9 @@ def load_variable_from_file(filename: str, src: str) -> object:
 
 
 def jaccard_index_from_ground_truth(
-    segmented: np.ndarray, ground_truth: np.ndarray, classes: np.ndarray,
+    segmented: np.ndarray,
+    ground_truth: np.ndarray,
+    classes: np.ndarray,
 ) -> float:
     """Calculates the Jaccard index of a segmented image with its corresponding ground
     truth image.
@@ -601,7 +611,9 @@ def jaccard_index_from_ground_truth(
 
         try:
             jaccard[key] = jaccard_score(
-                segmented.flatten(), ground_truth.flatten(), average=average_type,
+                segmented.flatten(),
+                ground_truth.flatten(),
+                average=average_type,
             )
         except:
             continue
@@ -653,18 +665,18 @@ def pixel_counts_to_volume_fraction(
     the pixel length scale and its equivalence in µm (or any other unit).
 
     Args:
-        pixel_counts (dict): Dictionary of pixel counts, where each key is a label and 
-                             its value is the number of pixels associated with that 
+        pixel_counts (dict): Dictionary of pixel counts, where each key is a label and
+                             its value is the number of pixels associated with that
                              label.
         pixel_length_scale (int): Scale length (present in any micrograph). Corresponds
-                                  to the number of pixels the scale occupies in the 
+                                  to the number of pixels the scale occupies in the
                                   image.
         length_scale (int): Value in µm of the scale.
         units (str, optional): Scale unit. Defaults to "µm".
         img_size (tuple, optional): Image size. Defaults to (500, 500).
 
     Returns
-        dict: Dictionary of volume fractions, where each key is a label and its value 
+        dict: Dictionary of volume fractions, where each key is a label and its value
               is its volume fraction in µm² (or any other unit).
 
     """
@@ -685,9 +697,13 @@ def pixel_counts_to_volume_fraction(
 
 
 def highlight_class_in_img(
-    img: np.ndarray, mask: np.ndarray, class_: int, fill_value: int = 0, keep_class: int = None
+    img: np.ndarray,
+    mask: np.ndarray,
+    class_: int,
+    fill_value: int = 0,
+    keep_class: int = None,
 ) -> np.ndarray:
-    """Highlights a class in an image. The input mask corresponds to the image 
+    """Highlights a class in an image. The input mask corresponds to the image
     segmentation and the class_ is the label that will be highlighted. Thus, every pixel
     in img whose value in mask is equal to class_ is preserved. Otherwise, its value is
     replaced by fill_value, except when that class is keep_class.
@@ -722,7 +738,7 @@ def highlight_class_in_img(
         class_ (int): Class to highlight.
         fill_value (int): Value for unwanted pixels. Defaults to 0.
         keep_class (int): In case a class is to be preserved. Defaults to None.
-        
+
     Returns
         np.ndarray: Highlighted image.
     """
@@ -738,7 +754,7 @@ def adjust_labels(segmentation_pixel_counts: dict) -> dict:
     """Label adjustment to improve Pretty Table.
 
     Args:
-        segmentation_pixel_counts (dict): Dictionary of labels and their 
+        segmentation_pixel_counts (dict): Dictionary of labels and their
                                           corresponding pixel counts.
 
     Returns:
@@ -851,7 +867,7 @@ def calculate_spacing(
 
     Args:
         I (np.ndarray): Input image as a numpy array.
-        img_name (str, optional): Image name; useful to name generated plots. Defaults 
+        img_name (str, optional): Image name; useful to name generated plots. Defaults
                                   to "img".
         save_plots (bool, optional): True if plots are to be saved. Defaults to False.
         dpi (int, optional): DPI of generated plots. Defaults to 120.

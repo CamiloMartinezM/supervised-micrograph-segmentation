@@ -6,6 +6,7 @@ Created on Thu Nov 12 06:45:29 2020
 """
 import os
 from itertools import chain, product
+
 import matplotlib.cm
 import matplotlib.pyplot as plt
 import numpy as np
@@ -22,11 +23,7 @@ from skimage.segmentation import (
     watershed,
 )
 
-from utils_functions import (
-    find_path_of_img,
-    get_folder,
-    load_img,
-)
+from utils_functions import find_path_of_img, get_folder, load_img
 
 
 class Scaler:
@@ -149,7 +146,11 @@ class Scaler:
 class SuperpixelSegmentation:
     """Superpixel algorithm implementation with the library skimage."""
 
-    def __init__(self, algorithm: str, parameters: tuple,) -> None:
+    def __init__(
+        self,
+        algorithm: str,
+        parameters: tuple,
+    ) -> None:
         """
         # Args:
             n_segments (int, optional): Approximate number of superpixels to create.
@@ -391,7 +392,7 @@ class FilterBank:
 
 
 class Preprocessor:
-    """In charge of preprocessing the micrographs, which includes cropping them to the desired 
+    """In charge of preprocessing the micrographs, which includes cropping them to the desired
     size and cropping the scale."""
 
     def __init__(
@@ -401,10 +402,10 @@ class Preprocessor:
         CROP_CRITERION: float = 0.1,
         DESIRED_SIZE: tuple = (500, 500),
     ) -> None:
-        """ 
+        """
         Args:
             startpath (str): Directory where "to label" micrographs lie.
-            test (bool): If True, a new directory will be created called "Test".  
+            test (bool): If True, a new directory will be created called "Test".
             If False, the micrographs in content/data/ will be modified.
         """
         self.startpath = startpath
@@ -424,7 +425,7 @@ class Preprocessor:
         plt.imsave(os.path.join(self.endpath, folder, name), img, cmap="gray")
 
     def is_possible_crop_to_size(self, img: np.ndarray) -> bool:
-        """ Returns true if the dimensions of the given image are greater than or equal to the 
+        """Returns true if the dimensions of the given image are greater than or equal to the
         desired one.
         """
         height, width = img.shape
@@ -434,7 +435,7 @@ class Preprocessor:
             return False
 
     def crop_to_size(self, img: np.ndarray) -> np.ndarray:
-        """Crops the given image to the desired size. This will only work if 
+        """Crops the given image to the desired size. This will only work if
         is_possible_crop_to_size(img) returns True."""
         height = img.shape[0]
         width = img.shape[1]
@@ -488,33 +489,37 @@ class Material:
         p_Si: float = 0,
     ) -> None:
         if fa > 0.1:
+            value_1 = 77.7 + 59.5 * p_Mn
+            if D_a != 0:
+                value_1 += 9.1 * (D_a ** (-0.5))
+
             self.sigma_y = (
-                fa * (77.7 + 59.5 * p_Mn + 9.1 * (D_a ** (-0.5)))
+                fa * value_1
                 + 145.5
                 + 3.5 * (S_0 ** (-0.5))
                 + 478 * (p_N ** 0.5)
                 + 1200 * p_P
             )
-    
+
             self.sigma_u = (
                 fa * (20 + 2440 * (p_N ** 0.5) + 18.5 * D_a)
                 + 750 * (1 - fa)
-                + 3 * (S_0 ** (-0.5))(1 - fa ** 0.5)
+                + 3 * (S_0 ** (-0.5)) * (1 - fa ** 0.5)
                 + 92.5 * p_Si
             )
         else:
-            t = 0.15*S_0*p_C
-            M = 2*(S_0 - t)
+            t = 0.15 * S_0 * p_C
+            M = 2 * (S_0 - t)
             if S_0 >= 0.15:
-                self.sigma_y = 308 + 0.07*(M**(-1))
-                self.sigma_u = 706 + 0.072*(M**(-1)) + 122*p_Si
+                self.sigma_y = 308 + 0.07 * (M ** (-1))
+                self.sigma_u = 706 + 0.072 * (M ** (-1)) + 122 * p_Si
             else:
-                self.sigma_y = 259 + 0.087*(M**(-1))
-                self.sigma_u = 773 + 0.058*(M**(-1)) + 122*p_Si
-    
+                self.sigma_y = 259 + 0.087 * (M ** (-1))
+                self.sigma_u = 773 + 0.058 * (M ** (-1)) + 122 * p_Si
+
     def yield_strength(self) -> float:
         return self.sigma_y
-    
+
     def tensile_strength(self) -> float:
         return self.sigma_u
 

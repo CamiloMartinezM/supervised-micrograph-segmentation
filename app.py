@@ -4,28 +4,30 @@ Created on Thu Jan 10 08:42:22 2020
 
 @author: Camilo Martínez
 """
-import give_console_width
 import os
+import statistics
 import textwrap
 import tkinter as tk
-from tkinter import filedialog
+from pathlib import Path
 from time import sleep
+from tkinter import filedialog
+
+import numpy as np
+from colorama import Fore, Style
+
+import give_console_width
+import model
+from utils_classes import Material, Preprocessor
 from utils_functions import (
-    load_variable_from_file,
     adjust_labels,
-    print_table_from_dict,
+    load_variable_from_file,
     pixel_counts_to_volume_fraction,
-    train_dev_test_split,
-    train_dev_test_split_table,
     print_interlaminar_spacing_table,
     print_mechanical_properties_table,
+    print_table_from_dict,
+    train_dev_test_split,
+    train_dev_test_split_table,
 )
-from utils_classes import Preprocessor, Material
-from colorama import Fore, Style
-import model
-import numpy as np
-import statistics
-from pathlib import Path
 
 # Author
 AUTHOR = "Camilo Martínez M."
@@ -38,8 +40,7 @@ SUPPORTED_IMAGE_FORMATS = [".png"]
 
 
 class SegmentationModel:
-    """Simple class to keep track of the parameters of the final segmentation model.
-    """
+    """Simple class to keep track of the parameters of the final segmentation model."""
 
     def __init__(
         self,
@@ -117,7 +118,10 @@ class SegmentationModel:
 
         print("\nSegmentation:\n")
         model.visualize_segmentation(
-            original_img, new_classes, class_matrix, dpi=120,
+            original_img,
+            new_classes,
+            class_matrix,
+            dpi=120,
         )
         # model.plot_image_with_ground_truth(test_img, ground_truth)
 
@@ -207,15 +211,17 @@ class SegmentationModel:
             )
         )
         if (
-            "ferrite" in volume_fractions
-            and volume_fractions["ferrite"]["percentage area"] <= 0.1
+            "Proeutectoid ferrite" in volume_fractions
+            and volume_fractions["Proeutectoid ferrite"]["percentage area"] <= 0.1
         ):  # pearlitic steel
             p_C = _get_simple_numerical_entry("[?] %C", "float")
             p_Si = _get_simple_numerical_entry("[?] %Si", "float", default_value=0)
             steels = {}
             for method in spacings:
                 steels[method] = Material(
-                    fa=volume_fractions.get("ferrite", 0),
+                    fa=volume_fractions.get("Proeutectoid ferrite", {}).get(
+                        "percentage area", 0
+                    ),
                     S_0=spacings[method]["µm"],
                     p_C=p_C,
                     p_Si=p_Si,
@@ -230,7 +236,7 @@ class SegmentationModel:
             steels = {}
             for method in spacings:
                 steels[method] = Material(
-                    fa=volume_fractions.get("ferrite", 0),
+                    fa=volume_fractions["Proeutectoid ferrite"]["percentage area"],
                     S_0=spacings[method]["µm"],
                     p_C=p_C,
                     p_Mn=p_Mn,
@@ -268,19 +274,23 @@ class SegmentationModel:
     ) -> None:
         segmentation_metrics = {}
         jaccard_per_img = {}
-        for _set in ["Train", "Dev", "Test"]:
-            if _set == "Train":
+        for _set_name, _set in [
+            ("Train", self.training_set),
+            ("Dev", self.development_set),
+            ("Test", self.test_set),
+        ]:
+            if _set_name == "Train":
                 print("\n[+] On training...")
-            elif _set == "Dev":
+            elif _set_name == "Dev":
                 print("\n[+] On development...")
             else:
                 print("\n[+] On testing...")
 
             (
-                segmentation_metrics[_set],
-                jaccard_per_img[_set],
+                segmentation_metrics[_set_name],
+                jaccard_per_img[_set_name],
             ) = model.evaluate_segmentation_performance(
-                self.training_set[:3],
+                _set,
                 ground_truth,
                 self.classes,
                 self.K,
@@ -311,8 +321,10 @@ class SegmentationModel:
             "Overall Accuracy",
             "F1 Macro",
             "Overall Jaccard Index",
-            "Micro Averaged Jaccard Index",
         ]
+        if "Micro Averaged Jaccard Index" in metrics:
+            overall_stats += ["Micro Averaged Jaccard Index"]
+
         class_stats = ["Accuracy", "Averaged F1"]
         branch = " │ "
         for i, _set in enumerate(metrics):
@@ -386,8 +398,8 @@ def path_leaf(path: str) -> str:
 
 
 def _create_title(title: str) -> None:
-    """ Creates a proper title.
-    
+    """Creates a proper title.
+
     Args:
         title (str): Title of the program.
     """
@@ -405,15 +417,15 @@ def _get_simple_numerical_entry(
     default_value=None,
     return_None: bool = False,
 ) -> float:
-    """ Gets an entry from the user and parses it to int or float depending on type_value parameter.
-    
+    """Gets an entry from the user and parses it to int or float depending on type_value parameter.
+
     Args:
         msg (str): Message to be shown before the user inputs a value.
         type_value (str): int or float.
         sign (str): '+' if a positive non-zero value is to be expected. '-' otherwise.
         default_value (optional): Default value of variable. Defaults to None.
         return_None (bool, optional): True if the value can be None. Defaults to False.
-        
+
     Returns:
         float, int: Entry made by the user.
     """
@@ -478,7 +490,7 @@ def _get_str_input(msg: str, valid_inputs: list, default: str = None) -> str:
 def _get_folder() -> str:
     """Print a numbered list of the subfolders in the working directory (i.e. the
     directory the script is run from), and returns the directory the user chooses.
-    
+
     Returns:
         str: Path of selected folder.
     """
@@ -513,7 +525,7 @@ def _get_folder() -> str:
 
 
 def _select_image_folder() -> str:
-    """Selects the image folder by using either a GUI file chooser or a script-based 
+    """Selects the image folder by using either a GUI file chooser or a script-based
     chooser.
 
     Returns:
@@ -659,7 +671,10 @@ def _take_option(selected_stuff: tuple) -> int:
 
 
 def _take_tool_option(selected_stuff: tuple) -> int:
-    (labeled_folder, preprocessed_folder,) = selected_stuff
+    (
+        labeled_folder,
+        preprocessed_folder,
+    ) = selected_stuff
     while True:
         try:
             option = "[?] Option "
@@ -738,7 +753,7 @@ def _load_new_parameters() -> dict:
 
     if superpixel_algorithm == "slic":
         n_segments = _get_simple_numerical_entry(
-            "└── [?] Number of centers for K-Means, n_segments",
+            "├── [?] Number of centers for K-Means, n_segments",
             "int",
             default_value=500,
         )
@@ -755,7 +770,7 @@ def _load_new_parameters() -> dict:
         algorithm_parameters = (n_segments, sigma, compactness)
     elif superpixel_algorithm == "felzenszwalb":
         scale = _get_simple_numerical_entry(
-            "└── [?] Free parameter. Higher means more clusters, scale",
+            "├── [?] Free parameter. Higher means more clusters, scale",
             "float",
             default_value=100,
         )
@@ -770,7 +785,7 @@ def _load_new_parameters() -> dict:
         algorithm_parameters = (scale, sigma, min_size)
     elif superpixel_algorithm == "quickshift":
         ratio = _get_simple_numerical_entry(
-            "└── [?] Color-space and image-space proximity, ratio",
+            "├── [?] Color-space and image-space proximity, ratio",
             "float",
             default_value=1,
         )
@@ -792,7 +807,7 @@ def _load_new_parameters() -> dict:
         algorithm_parameters = (ratio, kernel_size, max_dist, sigma)
     else:  # superpixel_algorithm == "watershed":
         markers = _get_simple_numerical_entry(
-            "└── [?] Desired number of markers, markers",
+            "├── [?] Desired number of markers, markers",
             "int",
             default_value=None,
             return_None=True,
@@ -866,7 +881,6 @@ def _set_up_train_dev_test_split() -> tuple:
 def _load_ground_truth(labeled_folder: str, classes: np.ndarray) -> str:
     ground_truth_path = None
     try:
-        int("tela")
         root = tk.Tk()
         root.withdraw()
         file_path = filedialog.askopenfilename()
@@ -1281,7 +1295,7 @@ def main():
             else:
                 print("\n[+] Chosen folder: ", imgs_folder)
 
-            sleep(1)
+            sleep(2)
             clear_console = True
         elif selected_option == 2:
             img_name = _select_image(imgs_folder)
@@ -1293,7 +1307,7 @@ def main():
             else:
                 print("\n[+] Chosen image: ", img_name)
 
-            sleep(1)
+            sleep(2)
             clear_console = True
         elif selected_option == 3:
             selected_model = load_final_model()
@@ -1338,18 +1352,18 @@ def main():
         elif selected_option == 6:
             print()
             if selected_model is None:
-                print("[*] No model selected.")
+                print("[*] No model selected.\n")
             else:
                 selected_model.evaluate_classification_performance()
-                _ = input("[?] Press any key to continue >> ")
+                _ = input("\n[?] Press any key to continue >> ")
                 clear_console = True
         elif selected_option == 7:
             print()
             if selected_model is None:
-                print("[*] No model selected.")
+                print("[*] No model selected.\n")
             else:
                 if imgs_folder is None:
-                    print("[*] You need to specify a folder of images to segment.")
+                    print("[*] You need to specify a folder of images to segment.\n")
                     continue
                 elif ground_truth is None:
                     print("[*] You need to load a ground truth first (.tif file).")
@@ -1357,10 +1371,12 @@ def main():
                         imgs_folder, selected_model.classes
                     )
 
-                selected_model.evaluate_segmentation_performance(
-                    imgs_folder, ground_truth
-                )
-                _ = input("[?] Press any key to continue >> ")
+                if ground_truth is not None:
+                    selected_model.evaluate_segmentation_performance(
+                        imgs_folder, ground_truth
+                    )
+
+                _ = input("\n[?] Press any key to continue >> ")
                 clear_console = True
         elif selected_option == 0:
             _continue_ = False
