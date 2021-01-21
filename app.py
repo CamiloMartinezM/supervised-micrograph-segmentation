@@ -11,6 +11,7 @@ import tkinter as tk
 from pathlib import Path
 from time import sleep
 from tkinter import filedialog
+import matplotlib
 
 import numpy as np
 from colorama import Fore, Style
@@ -28,6 +29,11 @@ from utils_functions import (
     train_dev_test_split,
     train_dev_test_split_table,
 )
+
+# Parameters for plots
+matplotlib.rcParams["font.family"] = "cmr10"
+matplotlib.rcParams["axes.unicode_minus"] = False
+matplotlib.rcParams.update({"font.size": 16})
 
 # Author
 AUTHOR = "Camilo Martínez M."
@@ -145,7 +151,7 @@ class SegmentationModel:
         )
 
         spacings = model.calculate_interlamellar_spacing(
-            original_img, class_matrix, new_classes
+            original_img, class_matrix, new_classes, save_plots=True, dpi=300
         )
         interlaminar_spacing = {
             "1": {

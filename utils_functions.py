@@ -969,8 +969,8 @@ def calculate_spacing(
         plt.plot(
             Wn.T, Fn, "k", X, Y, "r", [WnMax, WnMax], np.array([0, 1.2]) * max(Y), "b"
         )
-        plt.axis([0, 0.75, 0, 7e7])
-        plt.xlabel("Wavenumber [px^{-1}]")
+        # plt.axis([0, 0.75, 0, 7e7])
+        plt.xlabel("Wavenumber [px$^{-1}$]")
         plt.ylabel("Total spectral magnitude [a.u.]")
         plt.legend(("Spectral magnitude", "Peak fitting curve", "Peak position"))
         plt.tight_layout(pad=2)
