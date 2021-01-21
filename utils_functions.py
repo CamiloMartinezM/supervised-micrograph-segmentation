@@ -11,6 +11,7 @@ import pickle
 import random
 import textwrap
 from pprint import pprint
+from copy import deepcopy
 
 import cudf
 import cv2
@@ -237,7 +238,7 @@ def print_table_from_dict(
 
 
 def print_interlaminar_spacing_table(
-    spacing: dict, title: str = "Interlaminar spacing"
+    spacing: dict, title: str = "Interlaminar spacing, λ"
 ) -> None:
     """Prints a table from a dictionary of interlaminar spacings.
 
@@ -274,12 +275,12 @@ def print_mechanical_properties_table(
 
     cols = [
         "Method",
-        "Spacing [px]",
-        "Spacing [µm]",
-        "Yield Strength [MPa]",
-        "Tensile Strength [MPa]",
-        "Yield Strength [ksi]",
-        "Tensile Strength [ksi]",
+        "λ [px]",
+        "λ [µm]",
+        "σy [MPa]",
+        "σu [MPa]",
+        "σy [ksi]",
+        "σu [ksi]",
     ]
     table = PrettyTable(cols)
     for col in cols[1:]:
@@ -684,12 +685,12 @@ def pixel_counts_to_volume_fraction(
 
 
 def highlight_class_in_img(
-    img: np.ndarray, mask: np.ndarray, class_: int, fill_value: int = 0
+    img: np.ndarray, mask: np.ndarray, class_: int, fill_value: int = 0, keep_class: int = None
 ) -> np.ndarray:
     """Highlights a class in an image. The input mask corresponds to the image 
     segmentation and the class_ is the label that will be highlighted. Thus, every pixel
     in img whose value in mask is equal to class_ is preserved. Otherwise, its value is
-    replaced by fill_value.
+    replaced by fill_value, except when that class is keep_class.
 
     Example (class_ = 1, fill_value = 0):
 
@@ -720,13 +721,16 @@ def highlight_class_in_img(
         mask (np.ndarray): Segmented image.
         class_ (int): Class to highlight.
         fill_value (int): Value for unwanted pixels. Defaults to 0.
-
+        keep_class (int): In case a class is to be preserved. Defaults to None.
+        
     Returns
         np.ndarray: Highlighted image.
     """
-    result = img.copy()
+    result = deepcopy(img)
     result[mask != class_] = fill_value
     result[mask == class_] = img[mask == class_]
+    if keep_class is not None:
+        result[mask == keep_class] = img[mask == keep_class]
     return result
 
 
