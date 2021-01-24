@@ -12,6 +12,7 @@ import random
 import textwrap
 from copy import deepcopy
 from pprint import pprint
+from sklearn.model_selection import KFold
 
 import cudf
 import cv2
@@ -210,18 +211,10 @@ def print_table_from_dict(
     characteristic_value = list(data.values())[0]
 
     if type(characteristic_value) is np.ndarray:
-        for label in sorted(
-            data.keys(),
-            key=lambda x: data[x].shape[0],
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: data[x].shape[0], reverse=True,):
             table.add_row([label, f"{data[label].shape}"])
     elif type(characteristic_value) is list:
-        for label in sorted(
-            data.keys(),
-            key=lambda x: len(data[x]),
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: len(data[x]), reverse=True,):
             table.add_row([label, f"{len(data[label])}"])
     else:  # int
         for label in data.keys():
@@ -399,13 +392,16 @@ def statistics_from_matrix(matrix: pycm.ConfusionMatrix) -> dict:
             "Overall Accuracy": matrix.Overall_ACC,
             "F1 Macro": matrix.F1_Macro,
             "Accuracy Macro": matrix.ACC_Macro,
-            "Overall Jaccard Index": matrix.Overall_J,
+            "Overall Jaccard Index": matrix.Overall_J[1],
             "Class Balance Accuracy": matrix.CBA,
             "P-Value": matrix.PValue,
             "AUNU": matrix.AUNU,
         },
         "Class Statistics": {
             "Accuracy": matrix.ACC,
+            "Recall/Sensitivity": matrix.TPR,
+            "Specificity": matrix.TNR,
+            "Precision": matrix.PPV,
             "Error Rate": matrix.ERR,
             "Matthews correlation coefficient": matrix.MCC,
             "Jaccard Index": matrix.J,
@@ -587,9 +583,7 @@ def load_variable_from_file(filename: str, src: str) -> object:
 
 
 def jaccard_index_from_ground_truth(
-    segmented: np.ndarray,
-    ground_truth: np.ndarray,
-    classes: np.ndarray,
+    segmented: np.ndarray, ground_truth: np.ndarray, classes: np.ndarray,
 ) -> float:
     """Calculates the Jaccard index of a segmented image with its corresponding ground
     truth image.
@@ -611,9 +605,7 @@ def jaccard_index_from_ground_truth(
 
         try:
             jaccard[key] = jaccard_score(
-                segmented.flatten(),
-                ground_truth.flatten(),
-                average=average_type,
+                segmented.flatten(), ground_truth.flatten(), average=average_type,
             )
         except:
             continue
@@ -999,6 +991,43 @@ def calculate_spacing(
     spacing2 = 1 / Wmean
 
     return spacing1, spacing2
+
+
+def k_folds(dataset: list, k: int) -> tuple:
+    """Yields a tuple, which contains the train and test fold for the k-th validation 
+    in the cross-validation algorithm.
+
+    Args:
+        dataset (list): Given dataset. In the context of segmentation, this will be a 
+                        list of images names.
+        k (int): Number of folds.
+
+    Yields:
+        tuple: k-th train/test fold.
+    """
+    kf = KFold(n_splits=k, shuffle=False, random_state=1)
+    for train_index, test_index in kf.split(np.array(dataset)):
+        yield dataset[train_index], dataset[test_index]
+
+
+def list_of_names_to_list_of_numpy_arrays(names: list, src: str) -> list:
+    """Converts a list of image names to a list of numpy arrays by loading the
+    corresponding numpy array to a list.
+    
+    Args:
+        names (list): List of image names.
+        src (str): Path of image folder (contains the images to which the names in names
+                   correspond).
+    
+    Returns:
+        list: List of tuples of image name and image as a numpy array.
+    """
+    result = []
+    for name in names:
+        img = load_img(find_path_of_img(name, src, relative_path=True))
+        result.append((name, img))
+
+    return result
 
 
 def formatter(format_str, widths, *columns):

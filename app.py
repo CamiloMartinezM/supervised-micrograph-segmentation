@@ -18,7 +18,7 @@ from colorama import Fore, Style
 
 import give_console_width
 import model
-from utils_classes import Material, Preprocessor
+from utils_classes import Material, Preprocessor, TrailingFormatter
 from utils_functions import (
     adjust_labels,
     load_variable_from_file,
@@ -28,6 +28,8 @@ from utils_functions import (
     print_table_from_dict,
     train_dev_test_split,
     train_dev_test_split_table,
+    list_of_names_to_list_of_numpy_arrays,
+    k_folds,
 )
 
 # Parameters for plots
@@ -124,10 +126,7 @@ class SegmentationModel:
 
         print("\nSegmentation:\n")
         model.visualize_segmentation(
-            original_img,
-            new_classes,
-            class_matrix,
-            dpi=120,
+            original_img, new_classes, class_matrix, dpi=120,
         )
         # model.plot_image_with_ground_truth(test_img, ground_truth)
 
@@ -304,7 +303,6 @@ class SegmentationModel:
                 self.superpixel_algorithm,
                 self.algorithm_parameters,
                 filterbank_name=self.filterbank,
-                imgs_folder=imgs_folder,
                 save_png=False,
                 save_xlsx=False,
             )
@@ -324,15 +322,25 @@ class SegmentationModel:
     def show_metrics(metrics: dict) -> None:
         print("\n[+] Metrics:")
         overall_stats = [
-            "Overall Accuracy",
             "F1 Macro",
+            "Overall Accuracy",
             "Overall Jaccard Index",
         ]
-        if "Micro Averaged Jaccard Index" in metrics:
+        if (
+            "Micro Averaged Jaccard Index"
+            in metrics["Train"]["Overall Statistics"].keys()
+        ):
             overall_stats += ["Micro Averaged Jaccard Index"]
 
-        class_stats = ["Accuracy", "Averaged F1"]
+        class_stats = [
+            "Accuracy",
+            "Recall/Sensitivity",
+            "Specificity",
+            "Precision",
+            "Averaged F1",
+        ]
         branch = " │ "
+        kf = TrailingFormatter()
         for i, _set in enumerate(metrics):
             if i == len(metrics) - 1:
                 bullet = " └── "
@@ -356,7 +364,8 @@ class SegmentationModel:
                     value_to_print = str(value_to_print)
                 else:
                     value_to_print = str(round(value, 3))
-                print(f"\t{branch}\t{bullet}{stat}: {value_to_print}")
+                print(f"\t{branch}\t{bullet}", end="")
+                print(kf.format('{:t:<22} {}', stat, value_to_print))
 
             if _set != "Test":
                 print(f"{branch}\t{branch}\n{branch}", end="")
@@ -382,7 +391,8 @@ class SegmentationModel:
                         label, subvalue = pair
                         if _set != "Test":
                             print(f"{branch}", end="")
-                        print(f"\t\t{branch}\t{bullet}{label}: {round(subvalue, 3)}")
+                        print(f"\t\t{branch}\t{bullet}", end="")
+                        print(kf.format('{:t:<22} {}', label, round(subvalue, 3)))
                 elif type(value) is tuple:
                     value = (round(value[0], 3), round(value[1], 3))
                     print(f"{value}")
@@ -677,10 +687,7 @@ def _take_option(selected_stuff: tuple) -> int:
 
 
 def _take_tool_option(selected_stuff: tuple) -> int:
-    (
-        labeled_folder,
-        preprocessed_folder,
-    ) = selected_stuff
+    (labeled_folder, preprocessed_folder,) = selected_stuff
     while True:
         try:
             option = "[?] Option "
@@ -965,11 +972,15 @@ def load_final_model() -> SegmentationModel:
         windows_train=load_variable_from_file("training_windows", "saved_variables"),
         windows_dev=load_variable_from_file("development_windows", "saved_variables"),
         windows_test=load_variable_from_file("testing_windows", "saved_variables"),
-        training_set=load_variable_from_file("training_set_imgs", "saved_variables"),
-        development_set=load_variable_from_file(
-            "development_set_imgs", "saved_variables"
+        training_set=load_variable_from_file(
+            "training_set_imgs_as_numpy_arrays", "saved_variables"
         ),
-        test_set=load_variable_from_file("testing_set_imgs", "saved_variables"),
+        development_set=load_variable_from_file(
+            "development_set_imgs_as_numpy_arrays", "saved_variables"
+        ),
+        test_set=load_variable_from_file(
+            "testing_set_imgs_as_numpy_arrays", "saved_variables"
+        ),
     )
 
 
@@ -1036,6 +1047,15 @@ def load_new_model() -> SegmentationModel:
                 # Table that summarizes the number of windows noted by class or label that
                 # correspond to the phases or morphologies of interest in the micrographs.
                 train_dev_test_split_table(windows_train, windows_dev, windows_test)
+                parameters["training_set"] = list_of_names_to_list_of_numpy_arrays(
+                    training_set, labeled_folder
+                )
+                parameters["development_set"] = list_of_names_to_list_of_numpy_arrays(
+                    development_set, labeled_folder
+                )
+                parameters["test_set"] = list_of_names_to_list_of_numpy_arrays(
+                    test_set, labeled_folder
+                )
                 parameters["windows_train"] = windows_train
                 parameters["windows_dev"] = windows_dev
                 parameters["windows_test"] = windows_test
@@ -1173,13 +1193,13 @@ def load_new_model() -> SegmentationModel:
             "testing_windows", "saved_variables"
         )
         parameters["training_set"] = load_variable_from_file(
-            "training_set_imgs", "saved_variables"
+            "training_set_imgs_as_numpy_arrays", "saved_variables"
         )
         parameters["development_set"] = load_variable_from_file(
-            "development_set_imgs", "saved_variables"
+            "development_set_imgs_as_numpy_arrays", "saved_variables"
         )
         parameters["test_set"] = load_variable_from_file(
-            "testing_set_imgs", "saved_variables"
+            "testing_set_imgs_as_numpy_arrays", "saved_variables"
         )
 
     return SegmentationModel.from_parameters_dict(parameters)
@@ -1195,6 +1215,11 @@ def segment_an_image(
         image_path, pixel_length_scale=pixel_length_scale, length_scale=length_scale
     )
     _ = input("[?] Press any key to continue >> ")
+
+
+def perform_k_fold_cross_validation(dataset: list, k: int = 10) -> None:
+    for fold in k_folds(dataset, k):
+        print(fold)
 
 
 def tool_menu(section: int, loaded_elements: dict) -> None:
@@ -1270,6 +1295,7 @@ def main_menu() -> None:
     print("\nEvaluate:")
     print("6. Classification performance.")
     print("7. Segmentation performance.")
+    print("8. Perform K-Fold Cross Validation.")
     print("0. Quit.\n")
 
 
@@ -1368,14 +1394,20 @@ def main():
             if selected_model is None:
                 print("[*] No model selected.\n")
             else:
-                if imgs_folder is None:
-                    print("[*] You need to specify a folder of images to segment.\n")
-                    continue
-                elif ground_truth is None:
-                    print("[*] You need to load a ground truth first (.tif file).")
-                    ground_truth = _load_ground_truth(
-                        imgs_folder, selected_model.classes
+                if ground_truth is None:
+                    use_default_ground_truth = _get_str_input(
+                        "[?] Use default ground truth images (used in paper)",
+                        ["yes", "no"],
+                        "yes",
                     )
+                    if use_default_ground_truth == "no":
+                        ground_truth = _load_ground_truth(
+                            imgs_folder, selected_model.classes
+                        )
+                    else:
+                        ground_truth = load_variable_from_file(
+                            "ground_truth", "saved_variables"
+                        )
 
                 if ground_truth is not None:
                     selected_model.evaluate_segmentation_performance(
@@ -1384,6 +1416,11 @@ def main():
 
                 _ = input("\n[?] Press any key to continue >> ")
                 clear_console = True
+        elif selected_option == 8:
+            print()
+            if selected_model is None:
+                print("[*] No model selected.\n")
+
         elif selected_option == 0:
             _continue_ = False
         else:
