@@ -295,9 +295,7 @@ def extract_labeled_windows(
                 print("Done")
 
     print_table_from_dict(
-        labels,
-        cols=["Label", "Number"],
-        title="Number of windows per label",
+        labels, cols=["Label", "Number"], title="Number of windows per label",
     )
 
     return labels, windows_per_label, windows_per_name
@@ -658,8 +656,7 @@ def predict_class_of(
     # Matrix which correlates texture texton distances and minimum distances of every
     # pixel.
     A = np.sum(
-        np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09),
-        axis=-1,
+        np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-09), axis=-1,
     )
     A_i = A.sum(axis=1)  # Sum over rows (i.e, over all pixels).
     ci = A_i.argmax(axis=0)  # Class with maximum probability of occurrence is chosen.
@@ -668,7 +665,7 @@ def predict_class_of(
 
 
 def segment(
-    img_name: str,
+    img: np.ndarray,
     classes: np.ndarray,
     T: np.ndarray,
     algorithm: str,
@@ -734,18 +731,16 @@ def segment(
             S[pixel] = {(i, j): responses[i, j] for i, j in superpixel[pixel]}
         return S
 
-    test_img = load_img(img_name, as_255=False, with_io=True)  # Image is loaded.
-
     # The image is segmented using the given algorithm.
     superpixel_generation_model = SuperpixelSegmentation(
         algorithm, algorithm_parameters
     )
-    segments = superpixel_generation_model.segment(test_img)
+    segments = superpixel_generation_model.segment(img)
 
     if plot_original:
         print("\nOriginal image:")
         plt.figure(figsize=(10, 8), dpi=120)
-        plt.imshow(test_img, cmap="gray")
+        plt.imshow(img, cmap="gray")
         plt.axis("off")
         plt.tight_layout()
         plt.pause(0.05)
@@ -754,12 +749,10 @@ def segment(
 
     if plot_superpixels:
         print("\nSuperpixels:")
-        superpixel_generation_model.plot_output(test_img, segments, dpi=120)
+        superpixel_generation_model.plot_output(img, segments, dpi=120)
 
     S = get_superpixels(segments)  # Superpixels obtained from segments.
-    responses, _ = get_feature_vector_of_window(
-        test_img, filterbank_name=filterbank_name
-    )
+    responses, _ = get_feature_vector_of_window(img, filterbank_name=filterbank_name)
     S_feature_vectors = get_feature_vectors_of_superpixel(responses, S)
 
     def feature_vector_of(superpixel: int) -> np.ndarray:
@@ -776,7 +769,7 @@ def segment(
 
     # The new segments are created, i.e, actual segmentation.
     S_segmented = {}
-    class_matrix = np.zeros(test_img.shape, dtype=int)
+    class_matrix = np.zeros(img.shape, dtype=int)
     for superpixel in S:
         current_feature_vectors = feature_vector_of(superpixel)
         predicted_class_idx, S_segmented[superpixel] = predict_class_of(
@@ -800,7 +793,16 @@ def segment(
         if np.where(classes == class_to_subsegment)[0][0] in np.unique(class_matrix):
             idx = np.where(classes == class_to_subsegment)[0][0]
             mapping = {0: np.where(classes == class_to_subsegment)[0][0], 1: 2}
-            img_255 = load_img(img_name, as_255=True)  # Image is loaded.
+            img_255 = cv2.normalize(
+                img,
+                None,
+                alpha=0,
+                beta=255,
+                norm_type=cv2.NORM_MINMAX,
+                dtype=cv2.CV_64F,
+            ).astype(
+                np.uint8
+            )  # Image is changed to [0, 255] range.
 
             class_matrix, new_classes = sub_segment(
                 img_255, class_matrix, idx, name_of_resulting_class, classes, mapping
@@ -819,7 +821,7 @@ def segment(
     ]
     segmentation_pixel_counts = dict(zip(present_classes, pixel_counts))
 
-    return test_img, class_matrix, new_classes, segmentation_pixel_counts
+    return img, class_matrix, new_classes, segmentation_pixel_counts
 
 
 def sub_segment(
@@ -1105,10 +1107,7 @@ def evaluate_classification_performance(
             cm.relabel(mapping=mapping)
             print("Done")
             plot_confusion_matrix(
-                cm,
-                normalized=normalized,
-                title=img_filename,
-                save_png=save_png,
+                cm, normalized=normalized, title=img_filename, save_png=save_png,
             )
             if save_xlsx:
                 print(" ├── Exporting to excel... ", end="")
@@ -1205,15 +1204,12 @@ def make_classes_consistent(
             for i in range(ground_truth_img.min(), ground_truth_img.max() + 1)
         ]
     )
+    print(np.unique(ground_truth_img))
     return indexer[(ground_truth_img - ground_truth_img.min())].astype(int)
 
 
 def plot_image_with_ground_truth(
-    name: str,
-    ground_truth: dict,
-    src: str,
-    dpi: int = 80,
-    alpha: int = 0.5,
+    name: str, ground_truth: dict, src: str, dpi: int = 80, alpha: int = 0.5,
 ) -> None:
     """Plots an image given its name with its ground truth segmentation as an overlay.
 
@@ -1240,7 +1236,6 @@ def segmentation_metrics(
     algorithm: str,
     algorithm_parameters: tuple,
     filterbank_name: str,
-    src: str,
     max_test_number: int = -1,
 ) -> np.ndarray:
     """Obtains the confusion matrix for segmentation. Essentially, this method compares
@@ -1260,24 +1255,23 @@ def segmentation_metrics(
                                          account for evaluating classification
                                          performance. If set to -1, all labeled windows
                                          are taken. Defaults to -1.
-        src (str, optional): Source of images to segment and compare. Defaults to
-                             PATH_LABELED.
 
     Returns:
         np.ndarray: Segmentation confusion matrix.
     """
     matrix = None
     jaccard_per_img = {}
-    for k, name in enumerate(imgs):
+    for k, img_tuple in enumerate(imgs):
+        name, img = img_tuple
         if k == len(imgs) - 1:
             bullet = " └── "
             branch = "   "
         else:
             bullet = " ├── "
             branch = " │ "
-        print(f" │\t{bullet}Segmenting {name}... ", end="")
+        print(f" │\t{bullet}Segmenting image {k+1} ({name})... ", end="")
         _, segmented_img_as_matrix, _, _ = segment(
-            find_path_of_img(name, src=src),
+            img,
             classes,
             T,
             algorithm,
@@ -1323,7 +1317,6 @@ def evaluate_segmentation_performance(
     algorithm: str,
     algorithm_parameters: str,
     filterbank_name: str,
-    imgs_folder: str,
     save_png: bool,
     save_xlsx: bool,
     dpi: int = 120,
@@ -1362,7 +1355,6 @@ def evaluate_segmentation_performance(
         algorithm,
         algorithm_parameters,
         filterbank_name=filterbank_name,
-        src=imgs_folder,
         max_test_number=max_test_number,
     )
     # Maps integers classes to actual names of classes.
@@ -1385,19 +1377,12 @@ def evaluate_segmentation_performance(
         title = f"Confusion matrix (segmentation), K = {K}"
 
     plot_confusion_matrix(
-        cm,
-        normalized=True,
-        title=title,
-        dpi=dpi,
-        save_png=save_png,
+        cm, normalized=True, title=title, dpi=dpi, save_png=save_png,
     )
     if save_xlsx:
         print(" ├── Exporting to excel... ", end="")
         matrix_to_excel(
-            cm_array,
-            classes.tolist(),
-            sheetname=f"K = {K}",
-            filename="Segmentation",
+            cm_array, classes.tolist(), sheetname=f"K = {K}", filename="Segmentation",
         )
         print("Done")
     print(" └── Computing metrics... ", end="")

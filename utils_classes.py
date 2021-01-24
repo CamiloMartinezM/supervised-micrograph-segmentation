@@ -6,6 +6,7 @@ Created on Thu Nov 12 06:45:29 2020
 """
 import os
 from itertools import chain, product
+from string import Formatter
 
 import matplotlib.cm
 import matplotlib.pyplot as plt
@@ -146,11 +147,7 @@ class Scaler:
 class SuperpixelSegmentation:
     """Superpixel algorithm implementation with the library skimage."""
 
-    def __init__(
-        self,
-        algorithm: str,
-        parameters: tuple,
-    ) -> None:
+    def __init__(self, algorithm: str, parameters: tuple,) -> None:
         """
         # Args:
             n_segments (int, optional): Approximate number of superpixels to create.
@@ -522,8 +519,36 @@ class Material:
 
     def tensile_strength(self) -> float:
         return self.sigma_u
+    
+class TrailingFormatter(Formatter):
 
+    def vformat(self, *args):
+        self._automatic = None
+        return super(TrailingFormatter, self).vformat(*args)
 
+    def get_value(self, key, args, kwargs):
+        if key == '':
+            if self._automatic is None:
+                self._automatic = 0
+            elif self._automatic == -1:
+                raise ValueError("cannot switch from manual field specification "
+                                 "to automatic field numbering")
+            key = self._automatic
+            self._automatic += 1
+        elif isinstance(key, int):
+            if self._automatic is None:
+                self._automatic = -1
+            elif self._automatic != -1:
+                raise ValueError("cannot switch from automatic field numbering "
+                                 "to manual field specification")
+        return super(TrailingFormatter, self).get_value(key, args, kwargs)
+
+    def format_field(self, value, spec):
+        if len(spec) > 1 and spec[0] == 't':
+            value = str(value) + spec[1]  # append the extra character
+            spec = spec[2:]
+        return super(TrailingFormatter, self).format_field(value, spec)
+    
 class MultiscaleStatistics:
     """This class generates the feature vectors of an image based on multiscale
     statistics in a procedure described in G. Impoco, L. Tuminello, N. Fucà, M. Caccamo,
