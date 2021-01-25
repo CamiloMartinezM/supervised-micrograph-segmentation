@@ -25,6 +25,8 @@ from utils_functions import (
     list_of_names_to_list_of_numpy_arrays
 )
 
+from utils_classes import TrailingFormatter
+
 # Parámetros para las gráficas
 matplotlib.rcParams["font.family"] = "cmr10"
 matplotlib.rcParams["axes.unicode_minus"] = False
@@ -36,8 +38,8 @@ path_preprocessed = "Preprocesadas"
 # %%
 """Carga de variables importantes"""
 K = 6
-K_evaluation = load_variable_from_file("K_evaluation", "saved_variables")
-T = load_variable_from_file(f"texton_matrix_K_{K}_final", "saved_variables")
+classes = np.array(["proeutectoid ferrite", "pearlite"])
+T = load_variable_from_file(f"full_texton_matrix_K_{K}", "saved_variables")
 windows_train = load_variable_from_file("training_windows", "saved_variables")
 windows_dev = load_variable_from_file("development_windows", "saved_variables")
 windows_test = load_variable_from_file("testing_windows", "saved_variables")
@@ -45,7 +47,6 @@ training_set = load_variable_from_file("training_set_imgs", "saved_variables")
 development_set = load_variable_from_file("development_set_imgs", "saved_variables")
 test_set = load_variable_from_file("testing_set_imgs", "saved_variables")
 feature_vectors_of_label = load_variable_from_file("feature_vectors", "saved_variables")
-classes = np.array(["proeutectoid ferrite", "pearlite"])
 
 # %%
 """Carga de las imágenes ground truth.
@@ -117,7 +118,7 @@ micrographs, index_to_name = model.load_imgs(path_labeled, exclude=["Low carbon"
 
 # %%
 """Carga de las escalas"""
-micrographs_scales = model.load_scales()
+micrographs_scales = model.load_scales(path_labeled, path_preprocessed, load_full_preprocessed=True)
 save_variable_to_file(micrographs_scales, "scales", dst="saved_variables")
 
 # %%
@@ -156,6 +157,8 @@ labels, windows, windows_per_name = model.extract_labeled_windows(
     path_labeled, micrographs, index_to_name, exclude=["Low carbon"]
 )
 
+# %%
+save_variable_to_file(windows, "full_windows_dict", "saved_variables")
 # %%
 model.save_labeled_imgs_to_pdf(windows_per_name, classes, micrographs, index_to_name)
 
@@ -205,48 +208,24 @@ matriz de *feature vectors* para cada una de las clases, y luego haciendo un
 *clustering* que aprenda los textones asociados a cada una de ellas.
 """
 from itertools import chain
-
-K = 6
 filterbank = "MR8"
+
 windows_to_train_on = {}
 for k, v in chain(windows_train.items(), windows_dev.items()):
     windows_to_train_on.setdefault(k, []).extend(v)
 
 windows_train = windows_to_train_on
 
-windows_to_train_on = {}
-for k, v in chain(windows_train.items(), windows_test.items()):
-    windows_to_train_on.setdefault(k, []).extend(v)
+feature_vectors_of_label = model.obtain_feature_vectors_of_labels(windows_train, filterbank)
 
-windows_train = windows_to_train_on
-
-feature_vectors_of_label = model.feature_vectors_from_windows(
-    windows_train, verbose=True, filterbank_name=filterbank
-)
-
+# %%
+K = 6
 classes, T, _ = model.train(
     K, filterbank_name=filterbank, feature_vectors=feature_vectors_of_label
 )
 
 # %%
-save_variable_to_file(T, f"full_texton_matrix_K_{K}")
-save_variable_to_file(feature_vectors_of_label, "full_feature_vectors", "saved_variables")
-
-# %%
-"""Segmentación
-
-En primer lugar, se obtienen los superpíxeles de la imagen de prueba, al igual que los 
-*feature vectors* de cada uno de ellos. 
-
-S (dict): Superpixeles.
-S_feature_vectors (dict): Feature vectors de cada superpixel en S.
-
-Esta implementación obtiene un diccionario cuyas llaves corresponden a los superpíxeles 
-y los valores a la clase a la que dicho superpíxel pertenece. El fundamento matemático 
-está basado en una decisión de clasificación colectiva de cada superpíxel basada en las
-ocurrencias de los textones más cercanos de todos los píxeles en el superpíxel.
-"""
-test_img = "A1.png"
+test_img = "as0013.png"
 filterbank = "MR8"
 classes = np.array(["proeutectoid ferrite", "pearlite"])
 
@@ -259,7 +238,7 @@ algorithm_parameters = (100, 1.4, 100)
 # algorithm = "watershed"
 # algorithm_parameters = (250, 0.001)
 original_img, class_matrix, new_classes, segmentation_pixel_counts = model.segment(
-    find_path_of_img(test_img, model.PATH_LABELED),
+    load_img(find_path_of_img(test_img, path_labeled)),
     classes,
     T,
     algorithm=algorithm,
@@ -271,7 +250,6 @@ original_img, class_matrix, new_classes, segmentation_pixel_counts = model.segme
     subsegment_class=("pearlite", "ferrite"),
 )
 
-# %%
 model.visualize_segmentation(
     original_img,
     new_classes,
@@ -310,6 +288,107 @@ interlaminar_spacing = dict(
 print_table_from_dict(
     interlaminar_spacing, ["Method", "Value"], title="Interlaminar spacing"
 )
+
+# %%
+save_variable_to_file(T, "full_texton_matrix_K_6", "saved_variables")
+
+# %%
+save_variable_to_file(windows_train, "training_windows")
+save_variable_to_file(windows_dev, "development_windows")
+save_variable_to_file(windows_test, "testing_windows")
+save_variable_to_file(training_set, "training_set_imgs")
+save_variable_to_file(development_set, "development_set_imgs")
+save_variable_to_file(test_set, "testing_set_imgs")
+
+# %%
+save_variable_to_file(feature_vectors_of_label, "full_feature_vectors", "saved_variables")
+
+# %%
+def show_metrics(metrics: dict) -> None:
+    print("\n[+] Metrics:")
+    overall_stats = [
+        "F1 Macro",
+        "Overall Accuracy",
+        "Overall Jaccard Index",
+    ]
+    if (
+        "Micro Averaged Jaccard Index"
+        in metrics[list(metrics.keys())[0]]["Overall Statistics"].keys()
+    ):
+        overall_stats += ["Micro Averaged Jaccard Index"]
+
+    class_stats = [
+        "Accuracy",
+        "Recall/Sensitivity",
+        "Specificity",
+        "Precision",
+        "Averaged F1",
+    ]
+    branch = " │ "
+    kf = TrailingFormatter()
+    for i, _set in enumerate(metrics):
+        if i == len(metrics) - 1:
+            bullet = " └── "
+        else:
+            bullet = " ├── "
+
+        print(bullet + _set + ":")
+        if _set != "Test":
+            print(f"{branch}", end="")
+        print("\t ├── Overall:")
+        for j, stat in enumerate(overall_stats):
+            if j == len(overall_stats) - 1:
+                bullet = " └── "
+            else:
+                bullet = " ├── "
+            value = metrics[_set]["Overall Statistics"][stat]
+            if _set != "Test":
+                print(f"{branch}", end="")
+            if type(value) is tuple:
+                value_to_print = (round(value[0], 3), round(value[1], 3))
+                value_to_print = str(value_to_print)
+            else:
+                value_to_print = str(round(value, 3))
+            print(f"\t{branch}\t{bullet}", end="")
+            print(kf.format("{:t:<22} {}", stat, value_to_print))
+
+        if _set != "Test":
+            print(f"{branch}\t{branch}\n{branch}", end="")
+        else:
+            print(f"\t{branch}\n", end="")
+        print(f"\t{bullet}Per Class:")
+        for k, stat in enumerate(class_stats):
+            if k == len(class_stats) - 1:
+                bullet = " └── "
+            else:
+                bullet = " ├── "
+            if _set != "Test":
+                print(f"{branch}", end="")
+            print(f"\t\t{bullet}{stat}: ", end="")
+            value = metrics[_set]["Class Statistics"][stat]
+            if type(value) is dict:
+                print()
+                for l, pair in enumerate(value.items()):
+                    if l == len(value) - 1:
+                        bullet = " └── "
+                    else:
+                        bullet = " ├── "
+                    label, subvalue = pair
+                    if _set != "Test":
+                        print(f"{branch}", end="")
+                    print(f"\t\t{branch}\t{bullet}", end="")
+                    print(kf.format("{:t:<22} {}", label, round(subvalue, 3)))
+            elif type(value) is tuple:
+                value = (round(value[0], 3), round(value[1], 3))
+                print(f"{value}")
+            else:
+                print(f"{round(value, 3)}")
+                
+classification_metrics = model.evaluate_classification_performance(
+    K, classes, T, filterbank, windows_train, windows_dev, windows_test
+)
+
+show_metrics(classification_metrics)
 
 # %%
 """Evaluación de rendimiento"""
