@@ -461,7 +461,9 @@ def feature_vectors_from_windows(
     feature_vectors_of_label = {}
     for label in windows:
         responses = []
-        print(f"[?] Working on label: {label}...")
+        if verbose:
+            print(f"[?] Working on label: {label}...")
+            
         num_pixels = 0
         for i, window in enumerate(
             windows[label]
@@ -480,7 +482,8 @@ def feature_vectors_from_windows(
 
         responses_arr = np.array(responses, dtype=object)
 
-        print("\t> Flattening responses to get feature vector... ", end="")
+        if verbose:
+            print("\t> Flattening responses to get feature vector... ", end="")
 
         # Every pixel of every single labeled window has 8 responses, which come from 8
         # response images. The following operations convert responses_arr to a matrix
@@ -493,9 +496,12 @@ def feature_vectors_from_windows(
         #     8 + 4 * 3 * multiscale_statistics.scales,
         # )
         feature_vectors_of_label[label] = feature_vector
-        print("Done")
+        if verbose:
+            print("Done")
 
-    print("")
+    if verbose:
+        print("")
+        
     return feature_vectors_of_label
 
 
@@ -560,13 +566,16 @@ def train(
     classes = np.asarray(list(feature_vectors.keys()))  # Number of classes/labels
     C = len(classes)
 
-    print_table_from_dict(feature_vectors, cols=["Label", "Shape of feature vector"])
-    print("")
+    if verbose:
+        print_table_from_dict(feature_vectors, cols=["Label", "Shape of feature vector"])
+        print("")
 
     textons = {}
     clustering_entropy = {}
     for label in feature_vectors:
-        print(f"[?] Computing K-means on feature vector of label: {label}... ")
+        if verbose:
+            print(f"[?] Computing K-means on feature vector of label: {label}... ")
+            
         if minibatch_size is not None:
             textons[label] = MiniBatchKMeans(n_clusters=K).fit(feature_vectors[label])
         else:
@@ -574,16 +583,21 @@ def train(
                 np2cudf(feature_vectors[label])
             )
 
-        print(
-            "\tExample: ",
-            textons[label].cluster_centers_[randint(0, K - 1)].astype(np.uint8),
-        )
+        if verbose:
+            print(
+                "\tExample: ",
+                textons[label].cluster_centers_[randint(0, K - 1)].astype(np.uint8),
+            )
 
         if compute_clustering_entropy:
-            print("\tComputing clustering entropy: ", end="")
+            if verbose:
+                print("\tComputing clustering entropy: ", end="")
             clustering_entropy[label] = cython_entropy(textons[label].labels_)
-            print(f"{clustering_entropy[label]}")
-        print("\tDone")
+            if verbose:
+                print(f"{clustering_entropy[label]}")
+                
+        if verbose:
+            print("\tDone")
 
     # Matrix of texture textons
     # Once the textons have been learned for each of the classes, it is possible to
@@ -735,6 +749,7 @@ def segment(
     superpixel_generation_model = SuperpixelSegmentation(
         algorithm, algorithm_parameters
     )
+    
     segments = superpixel_generation_model.segment(img)
 
     if plot_original:
@@ -786,7 +801,7 @@ def segment(
                     f"Superpixel {superpixel} (pixels={num_pixels}) assigned to "
                     + S_segmented[superpixel]
                 )
-
+                
     if subsegment_class is not None:
         class_to_subsegment, name_of_resulting_class = subsegment_class
         # Check if the class to subsegment is present in the segmentation
@@ -808,10 +823,11 @@ def segment(
                 img_255, class_matrix, idx, name_of_resulting_class, classes, mapping
             )
         else:
-            print(
-                f"{class_to_subsegment} was not found in segmentation, so it won't be "
-                "subsegmented into {name_of_resulting_class}"
-            )
+            if verbose:
+                print(
+                    f"{class_to_subsegment} was not found in segmentation, so it won't be "
+                    "subsegmented into {name_of_resulting_class}"
+                )
     else:
         new_classes = classes.copy()
 
@@ -852,6 +868,7 @@ def sub_segment(
     subsegmented_img = highlight_class_in_img(
         img_to_binary(img), segments, class_to_subsegment, fill_value=-1
     )
+    
     new_segments = segments.copy()
     for binary_value, corresponding_class in binary_mapping.items():
         new_segments[subsegmented_img == binary_value] = corresponding_class
@@ -949,13 +966,21 @@ def visualize_segmentation(
     plt.imshow(mark_boundaries(original_img, segments), cmap="gray")
     plt.imshow(overlay, cmap=colours, norm=norm, alpha=0.6)
     cb = plt.colorbar(ticks=np.arange(C_p))
-    cb.ax.set_yticklabels(classes[min(present_classes) : max(present_classes) + 1])
+    
+    labels = list(classes[min(present_classes) : max(present_classes) + 1]).copy()
+    if "ferrite" in labels:
+        labels[labels.index("pearlite")] = "cementite"
+    
+    cb.ax.set_yticklabels(labels)
 
     plt.tight_layout(w_pad=100)
     plt.axis("off")
-    plt.pause(0.05)
     if save_png:
+        if not png_name.endswith(".png"):
+            png_name += ".png"
+            
         plt.savefig(png_name, bbox_inches=0, dpi=dpi)
+    plt.pause(0.05)
 
     # plt.show()
     # plt.close()
@@ -1236,6 +1261,7 @@ def segmentation_metrics(
     algorithm: str,
     algorithm_parameters: tuple,
     filterbank_name: str,
+    verbose: bool,
     max_test_number: int = -1,
 ) -> np.ndarray:
     """Obtains the confusion matrix for segmentation. Essentially, this method compares
@@ -1269,7 +1295,8 @@ def segmentation_metrics(
         else:
             bullet = " ├── "
             branch = " │ "
-        print(f" │\t{bullet}Segmenting image {k+1} ({name})... ", end="")
+        if verbose:
+            print(f" │\t{bullet}Segmenting image {k+1} ({name})... ", end="")
         _, segmented_img_as_matrix, _, _ = segment(
             img,
             classes,
@@ -1281,27 +1308,35 @@ def segmentation_metrics(
 
         y_pred = segmented_img_as_matrix.ravel()
 
-        print("Done")
+        if verbose:
+            print("Done")
         y_true = ground_truth[name].ravel()
 
         if matrix is None:
-            print(f" │\t{branch}   ├── Calculating confusion matrix... ", end="")
+            if verbose:
+                print(f" │\t{branch}   ├── Calculating confusion matrix... ", end="")
             matrix = ConfusionMatrix(y_true, y_pred, transpose=True)
         else:
-            print(
-                f" │\t{branch}   ├── Combining confusion matrix with previous one... ",
-                end="",
-            )
-            matrix = matrix.combine(ConfusionMatrix(y_true, y_pred, transpose=True))
+            if verbose:
+                print(
+                    f" │\t{branch}   ├── Combining confusion matrix with previous one... ",
+                    end="",
+                )
+            try:
+                matrix = matrix.combine(ConfusionMatrix(y_true, y_pred, transpose=True))
+            except:
+                pass
 
-        print("Done")
-        print(
-            f" │\t{branch}   └── Calculating Jaccard Index for this image... ", end=""
-        )
+        if verbose:
+            print("Done")
+            print(
+                f" │\t{branch}   └── Calculating Jaccard Index for this image... ", end=""
+            )
         jaccard_per_img[name] = jaccard_index_from_ground_truth(
             segmented_img_as_matrix, ground_truth[name], classes
         )
-        print("Done")
+        if verbose:
+            print("Done")
         if k == max_test_number:
             break
 
@@ -1317,6 +1352,7 @@ def evaluate_segmentation_performance(
     algorithm: str,
     algorithm_parameters: str,
     filterbank_name: str,
+    verbose: bool,
     save_png: bool,
     save_xlsx: bool,
     dpi: int = 120,
@@ -1346,7 +1382,9 @@ def evaluate_segmentation_performance(
                                     the filesystem as a .xlsx file. Defaults to True.
         max_test_number (int, optional): [description]. Defaults to -1.
     """
-    print("\n[+] Computing segmentation performance... ")
+    if verbose:
+        print("\n[+] Computing segmentation performance... ")
+        
     cm, cm_array, jaccard_per_img = segmentation_metrics(
         imgs,
         ground_truth,
@@ -1355,6 +1393,7 @@ def evaluate_segmentation_performance(
         algorithm,
         algorithm_parameters,
         filterbank_name=filterbank_name,
+        verbose=verbose,
         max_test_number=max_test_number,
     )
     # Maps integers classes to actual names of classes.
@@ -1380,14 +1419,18 @@ def evaluate_segmentation_performance(
         cm, normalized=True, title=title, dpi=dpi, save_png=save_png,
     )
     if save_xlsx:
-        print(" ├── Exporting to excel... ", end="")
+        if verbose:
+            print(" ├── Exporting to excel... ", end="")
         matrix_to_excel(
             cm_array, classes.tolist(), sheetname=f"K = {K}", filename="Segmentation",
         )
-        print("Done")
-    print(" └── Computing metrics... ", end="")
+        if verbose:
+            print("Done")
+    if verbose:
+        print(" └── Computing metrics... ", end="")
     stats = statistics_from_matrix(cm)
-    print("Done\n")
+    if verbose:
+        print("Done\n")
     return stats, jaccard_per_img
 
 

@@ -21,6 +21,7 @@ import model
 from utils_classes import Material, Preprocessor, TrailingFormatter
 from utils_functions import (
     adjust_labels,
+    load_img,
     load_variable_from_file,
     pixel_counts_to_volume_fraction,
     print_interlaminar_spacing_table,
@@ -29,6 +30,8 @@ from utils_functions import (
     train_dev_test_split,
     train_dev_test_split_table,
     list_of_names_to_list_of_numpy_arrays,
+    extract_windows_from_filenames,
+    save_variable_to_file,
     k_folds,
 )
 
@@ -104,8 +107,31 @@ class SegmentationModel:
             algorithm_parameters=parameters["algorithm_parameters"],
         )
 
+    def get_parameters(self) -> dict:
+        return {
+            "K": self.K,
+            "name": self.name,
+            "classes": np.array(self.classes),
+            "subsegment_class": self.subsegment_class,
+            "filterbank": self.filterbank,
+            "superpixel_algorithm": self.superpixel_algorithm,
+            "texton_matrix": self.texton_matrix,
+            "scales": self.scales,
+            "windows_train": self.windows_train,
+            "windows_dev": self.windows_dev,
+            "windows_test": self.windows_test,
+            "training_set": self.training_set,
+            "development_set": self.development_set,
+            "test_set": self.test_set,
+            "algorithm_parameters": self.algorithm_parameters,
+        }
+
     def segment(
-        self, image_path: str, pixel_length_scale: int, length_scale: int
+        self,
+        img: np.ndarray,
+        pixel_length_scale: int,
+        length_scale: int,
+        name: str = "segmentation",
     ) -> None:
         (
             original_img,
@@ -113,7 +139,7 @@ class SegmentationModel:
             new_classes,
             segmentation_pixel_counts,
         ) = model.segment(
-            image_path,
+            img,
             self.classes,
             self.texton_matrix,
             algorithm=self.superpixel_algorithm,
@@ -126,7 +152,12 @@ class SegmentationModel:
 
         print("\nSegmentation:\n")
         model.visualize_segmentation(
-            original_img, new_classes, class_matrix, dpi=120,
+            original_img,
+            new_classes,
+            class_matrix,
+            dpi=120,
+            save_png=True,
+            png_name=name,
         )
         # model.plot_image_with_ground_truth(test_img, ground_truth)
 
@@ -150,7 +181,7 @@ class SegmentationModel:
         )
 
         spacings = model.calculate_interlamellar_spacing(
-            original_img, class_matrix, new_classes, save_plots=True, dpi=300
+            original_img, class_matrix, new_classes, save_plots=False, dpi=300
         )
         interlaminar_spacing = {
             "1": {
@@ -275,8 +306,12 @@ class SegmentationModel:
         SegmentationModel.show_metrics(classification_metrics)
 
     def evaluate_segmentation_performance(
-        self, imgs_folder: str, ground_truth: dict
-    ) -> None:
+        self,
+        ground_truth: dict,
+        only: list = [],
+        return_stats: bool = False,
+        verbose: bool = True,
+    ) -> dict:
         segmentation_metrics = {}
         jaccard_per_img = {}
         for _set_name, _set in [
@@ -284,12 +319,16 @@ class SegmentationModel:
             ("Dev", self.development_set),
             ("Test", self.test_set),
         ]:
-            if _set_name == "Train":
-                print("\n[+] On training...")
-            elif _set_name == "Dev":
-                print("\n[+] On development...")
-            else:
-                print("\n[+] On testing...")
+            if only and _set_name not in only:
+                continue
+
+            if verbose:
+                if _set_name == "Train":
+                    print("\n[+] On Training set...")
+                elif _set_name == "Dev":
+                    print("\n[+] On Development set...")
+                else:
+                    print("\n[+] On Test set...")
 
             (
                 segmentation_metrics[_set_name],
@@ -303,6 +342,7 @@ class SegmentationModel:
                 self.superpixel_algorithm,
                 self.algorithm_parameters,
                 filterbank_name=self.filterbank,
+                verbose=verbose,
                 save_png=False,
                 save_xlsx=False,
             )
@@ -314,9 +354,13 @@ class SegmentationModel:
 
             segmentation_metrics[_set]["Overall Statistics"][
                 "Micro Averaged Jaccard Index"
-            ] = statistics.harmonic_mean(micro_jaccard)
+            ] = statistics.mean(micro_jaccard)
 
-        SegmentationModel.show_metrics(segmentation_metrics)
+        if verbose:
+            SegmentationModel.show_metrics(segmentation_metrics)
+
+        if return_stats:
+            return segmentation_metrics
 
     @staticmethod
     def show_metrics(metrics: dict) -> None:
@@ -328,7 +372,7 @@ class SegmentationModel:
         ]
         if (
             "Micro Averaged Jaccard Index"
-            in metrics["Train"]["Overall Statistics"].keys()
+            in metrics[list(metrics.keys())[0]]["Overall Statistics"].keys()
         ):
             overall_stats += ["Micro Averaged Jaccard Index"]
 
@@ -365,7 +409,7 @@ class SegmentationModel:
                 else:
                     value_to_print = str(round(value, 3))
                 print(f"\t{branch}\t{bullet}", end="")
-                print(kf.format('{:t:<22} {}', stat, value_to_print))
+                print(kf.format("{:t:<22} {}", stat, value_to_print))
 
             if _set != "Test":
                 print(f"{branch}\t{branch}\n{branch}", end="")
@@ -392,7 +436,7 @@ class SegmentationModel:
                         if _set != "Test":
                             print(f"{branch}", end="")
                         print(f"\t\t{branch}\t{bullet}", end="")
-                        print(kf.format('{:t:<22} {}', label, round(subvalue, 3)))
+                        print(kf.format("{:t:<22} {}", label, round(subvalue, 3)))
                 elif type(value) is tuple:
                     value = (round(value[0], 3), round(value[1], 3))
                     print(f"{value}")
@@ -793,7 +837,7 @@ def _load_new_parameters() -> dict:
             default_value=1.4,
         )
         min_size = _get_simple_numerical_entry(
-            "└── [?] Minimum component size, min_size > ", "float", default_value=100
+            "└── [?] Minimum component size, min_size > ", "int", default_value=100
         )
         algorithm_parameters = (scale, sigma, min_size)
     elif superpixel_algorithm == "quickshift":
@@ -957,6 +1001,33 @@ def _load_ground_truth(labeled_folder: str, classes: np.ndarray) -> str:
     return ground_truth
 
 
+def _update_parameters_from(
+    fold: tuple, model_parameters: dict, windows_data: dict, new_parameters: dict = {}
+) -> dict:
+    train, dev = fold
+    train_filenames = [item[0] for item in train]
+    windows_train = extract_windows_from_filenames(train_filenames, windows_data)
+
+    parameters = model_parameters.copy()
+    parameters["training_set"] = train
+    parameters["development_set"] = dev
+    parameters["windows_train"] = windows_train
+
+    # Update aditional parameters
+    parameters.update(new_parameters)
+
+    feature_vectors = model.obtain_feature_vectors_of_labels(
+        windows_train, parameters["filterbank"], verbose=False,
+    )
+
+    classes, T, _ = model.train(
+        parameters["K"], parameters["filterbank"], feature_vectors, verbose=False,
+    )
+
+    parameters["texton_matrix"] = T
+    return parameters
+
+
 def load_final_model() -> SegmentationModel:
     return SegmentationModel(
         K=6,
@@ -966,7 +1037,7 @@ def load_final_model() -> SegmentationModel:
         filterbank="MR8",
         superpixel_algorithm="felzenszwalb",
         texton_matrix=load_variable_from_file(
-            "texton_matrix_K_6_final", "saved_variables"
+            "full_texton_matrix_K_6", "saved_variables"
         ),
         scales=_load_default_scales_dictionary(),
         windows_train=load_variable_from_file("training_windows", "saved_variables"),
@@ -1047,6 +1118,7 @@ def load_new_model() -> SegmentationModel:
                 # Table that summarizes the number of windows noted by class or label that
                 # correspond to the phases or morphologies of interest in the micrographs.
                 train_dev_test_split_table(windows_train, windows_dev, windows_test)
+                parameters = {}
                 parameters["training_set"] = list_of_names_to_list_of_numpy_arrays(
                     training_set, labeled_folder
                 )
@@ -1212,14 +1284,283 @@ def segment_an_image(
     length_scale: int,
 ) -> None:
     selected_model.segment(
-        image_path, pixel_length_scale=pixel_length_scale, length_scale=length_scale
+        load_img(image_path),
+        pixel_length_scale=pixel_length_scale,
+        length_scale=length_scale,
+        name=path_leaf(image_path)
     )
     _ = input("[?] Press any key to continue >> ")
 
 
-def perform_k_fold_cross_validation(dataset: list, k: int = 10) -> None:
-    for fold in k_folds(dataset, k):
-        print(fold)
+def perform_k_fold_cross_validation(
+    dataset: list, model_parameters: dict, ground_truth: dict, k: int = 10
+) -> None:
+    print(f"[+] Performing {k}-fold Cross-Validation...")
+    windows_data = load_variable_from_file("full_windows_data", "saved_variables")
+    performances = {}
+    for ki, fold in enumerate(k_folds(dataset, k)):
+        if ki == k - 1:
+            bullet = " └── "
+            branch = ""
+        else:
+            bullet = " ├── "
+            branch = " │ "
+
+        print(f"{bullet}[+] Working on fold {ki+1}...")
+        print(f"{branch}\t  ├── [+] Training model... ", end="")
+        parameters = _update_parameters_from(fold, model_parameters, windows_data)
+
+        print("Done")
+        print(f"{branch}\t  └── [+] Evaluating model on Dev Set... ", end="")
+
+        current_model = SegmentationModel.from_parameters_dict(parameters)
+        performances[ki] = current_model.evaluate_segmentation_performance(
+            ground_truth, only=["Dev"], return_stats=True, verbose=False
+        )["Dev"]["Overall Statistics"]
+
+        print("Done")
+
+    averaged_performances = {
+        "F1 Macro": 0,
+        "Overall Accuracy": 0,
+        "Overall Jaccard Index": 0,
+        "Micro Averaged Jaccard Index": 0,
+    }
+
+    print("\n[+] Cross-Validated Metrics on Dev Set:")
+    kf = TrailingFormatter()
+    for i, metric in enumerate(averaged_performances):
+        if i == len(averaged_performances) - 1:
+            bullet = " └── "
+        else:
+            bullet = " ├── "
+
+        for fold in performances:
+            averaged_performances[metric] += performances[fold][metric] / k
+
+        print(f"{bullet}", end="")
+        print(kf.format("{:t:<30} {}", metric, round(averaged_performances[metric], 4)))
+
+
+def perform_nested_k_fold_cross_validation(
+    dataset: list,
+    model_parameters: dict,
+    ground_truth: dict,
+    k: int = 10,
+    defining_metric: str = "Micro Averaged Jaccard Index",
+) -> None:
+    print(f"[+] Performing Nested {k}-fold Cross-Validation...")
+    windows_data = load_variable_from_file("full_windows_data", "saved_variables")
+    outer_performances = {}
+    branch = " │ "
+    for ki, outer_fold in enumerate(k_folds(dataset, k)):
+        if ki == k - 1:
+            bullet = " └── "
+        else:
+            bullet = " ├── "
+
+        print(f"{bullet}[+] Working on outer fold {ki+1}...")
+        performances = {}
+        # for K in range(4, 24, 4):
+        for K in range(6, 10):
+            # for scale in [75, 85, 95, 100, 105, 115, 125]:
+            for scale in [75, 100, 125]:
+                # for sigma in [2 * i / 10 for i in range(3, 9)]:
+                for sigma in [0.8, 1.0, 1.2, 1.4]:
+                    # for min_size in [75, 85, 95, 100, 105, 115, 125]:
+                    for min_size in [75, 100, 125]:
+                        print(
+                            f"{branch}\t  ├── [+] Parameter combination: "
+                            f"{K, (scale, sigma, min_size)}:"
+                        )
+
+                        inner_performances = {}
+                        for i, tuning_fold in enumerate(k_folds(outer_fold[0], k - 1)):
+                            print(
+                                f"{branch}\t {branch}   ├── [+] Working on "
+                                f"inner fold {i+1}..."
+                            )
+                            print(
+                                f"{branch}\t {branch}  {branch}   ├── [+] Training "
+                                "model... ",
+                                end="",
+                            )
+
+                            parameters = _update_parameters_from(
+                                tuning_fold,
+                                model_parameters,
+                                windows_data,
+                                new_parameters={
+                                    "K": K,
+                                    "algorithm_parameters": (scale, sigma, min_size),
+                                },
+                            )
+                            print("Done")
+
+                            current_model = SegmentationModel.from_parameters_dict(
+                                parameters
+                            )
+
+                            print(
+                                f"{branch}\t {branch}  {branch}   └── [+] Evaluating"
+                                " model on Dev Set... ",
+                                end="",
+                            )
+                            inner_performances[
+                                i
+                            ] = current_model.evaluate_segmentation_performance(
+                                ground_truth,
+                                only=["Dev"],
+                                return_stats=True,
+                                verbose=False,
+                            )[
+                                "Dev"
+                            ][
+                                "Overall Statistics"
+                            ]
+
+                            print("Done")
+
+                        print(
+                            f"{branch}\t {branch}   └── [+] Computing average "
+                            "performance... ",
+                            end="",
+                        )
+                        averaged_performances = {
+                            "F1 Macro": 0,
+                            "Overall Accuracy": 0,
+                            "Overall Jaccard Index": 0,
+                            "Micro Averaged Jaccard Index": 0,
+                        }
+
+                        for i, metric in enumerate(averaged_performances):
+                            for fold in inner_performances:
+                                averaged_performances[metric] += inner_performances[
+                                    fold
+                                ][metric] / (k - 1)
+
+                        performances[
+                            (K, parameters["algorithm_parameters"])
+                        ] = averaged_performances
+
+                        print("Done")
+
+        # Choose best combination of hyperparameters
+        print(" ├── [+] Choosing best combination of hyperparameters... ", end="")
+        best_value = 0
+        best_combination = None
+        for combination in performances:
+            if performances[combination][defining_metric] > best_value:
+                best_value = performances[combination][defining_metric]
+                best_combination = combination
+
+        print(f"Done {best_combination}")
+        print(
+            " ├── [+] Training model with best combination of hyperparameters... ",
+            end="",
+        )
+        parameters = _update_parameters_from(
+            outer_fold,
+            model_parameters,
+            windows_data,
+            new_parameters={
+                "K": best_combination[0],
+                "algorithm_parameters": best_combination[1],
+            },
+        )
+
+        current_model = SegmentationModel.from_parameters_dict(parameters)
+        print("Done")
+
+        print(f"{bullet}[+] Evaluating model... ", end="")
+        outer_performances[ki] = {
+            "best combination": best_combination,
+            "stats": current_model.evaluate_segmentation_performance(
+                ground_truth, only=["Dev"], return_stats=True, verbose=False,
+            )["Dev"]["Overall Statistics"],
+        }
+        print("Done")
+
+    return outer_performances
+
+
+def perform_nested_k_fold_cross_validation_2(
+    dataset: list,
+    model_parameters: dict,
+    ground_truth: dict,
+    k: int = 10,
+    defining_metric: str = "Micro Averaged Jaccard Index",
+) -> None:
+    print(f"[+] Performing Nested {k}-fold Cross-Validation...")
+    windows_data = load_variable_from_file("full_windows_data", "saved_variables")
+    branch = " │ "
+
+    performances = {}
+    for K in range(6, 13):
+        for scale in [75, 100, 125]:
+            for sigma in [0.8, 1.0, 1.2, 1.4]:
+                for min_size in [100, 115, 125]:
+                    print(f"[+] Parameter combination: {K, (scale, sigma, min_size)}:")
+
+                    inner_performances = {}
+                    for i, tuning_fold in enumerate(k_folds(dataset, k)):
+                        print(f" ├── [+] Working on fold {i+1}...")
+                        print(f"{branch}\t  ├── [+] Training model... ", end="")
+
+                        parameters = _update_parameters_from(
+                            tuning_fold,
+                            model_parameters,
+                            windows_data,
+                            new_parameters={
+                                "K": K,
+                                "algorithm_parameters": (scale, sigma, min_size),
+                            },
+                        )
+                        print("Done")
+
+                        current_model = SegmentationModel.from_parameters_dict(
+                            parameters
+                        )
+
+                        print(
+                            f"{branch}\t  └── [+] Evaluating model on Dev Set... ",
+                            end="",
+                        )
+
+                        inner_performances[
+                            i
+                        ] = current_model.evaluate_segmentation_performance(
+                            ground_truth,
+                            only=["Dev"],
+                            return_stats=True,
+                            verbose=False,
+                        )[
+                            "Dev"
+                        ][
+                            "Overall Statistics"
+                        ]
+
+                        print("Done")
+
+                    print(" └── [+] Computing average performance... ", end="")
+                    averaged_performances = {
+                        "F1 Macro": 0,
+                        "Overall Accuracy": 0,
+                        "Overall Jaccard Index": 0,
+                        "Micro Averaged Jaccard Index": 0,
+                    }
+
+                    for i, metric in enumerate(averaged_performances):
+                        for fold in inner_performances:
+                            averaged_performances[metric] += (
+                                inner_performances[fold][metric] / k
+                            )
+
+                    performances[
+                        (K, parameters["algorithm_parameters"])
+                    ] = averaged_performances
+
+                    print("Done")
 
 
 def tool_menu(section: int, loaded_elements: dict) -> None:
@@ -1295,7 +1636,8 @@ def main_menu() -> None:
     print("\nEvaluate:")
     print("6. Classification performance.")
     print("7. Segmentation performance.")
-    print("8. Perform K-Fold Cross Validation.")
+    print("8. Perform K-Fold Cross-Validation.")
+    print("9. Perform Nested K-Fold Cross-Validation.")
     print("0. Quit.\n")
 
 
@@ -1376,7 +1718,7 @@ def main():
                     "[?] Scale length in µm", "int"
                 )
                 segment_an_image(
-                    img_name, selected_model, pixel_length_scale, length_scale
+                    img_name, selected_model, pixel_length_scale, length_scale, 
                 )
 
             sleep(2)
@@ -1410,9 +1752,17 @@ def main():
                         )
 
                 if ground_truth is not None:
-                    selected_model.evaluate_segmentation_performance(
-                        imgs_folder, ground_truth
+                    _set_name = _get_str_input(
+                        "[+] On what set?",
+                        ["Train", "Dev", "Test", "all"],
+                        default="Test",
                     )
+                    if _set_name == "all":
+                        only = []
+                    else:
+                        only = [_set_name]
+
+                    selected_model.evaluate_segmentation_performance(ground_truth, only)
 
                 _ = input("\n[?] Press any key to continue >> ")
                 clear_console = True
@@ -1420,7 +1770,64 @@ def main():
             print()
             if selected_model is None:
                 print("[*] No model selected.\n")
+            else:
+                if ground_truth is None:
+                    use_default_ground_truth = _get_str_input(
+                        "[?] Use default ground truth images (used in paper)",
+                        ["yes", "no"],
+                        "yes",
+                    )
+                    if use_default_ground_truth == "no":
+                        ground_truth = _load_ground_truth(
+                            imgs_folder, selected_model.classes
+                        )
+                    else:
+                        ground_truth = load_variable_from_file(
+                            "ground_truth", "saved_variables"
+                        )
 
+                if ground_truth is not None:
+                    print()
+                    perform_k_fold_cross_validation(
+                        selected_model.training_set + selected_model.development_set,
+                        selected_model.get_parameters(),
+                        ground_truth,
+                        k=3,
+                    )
+
+            _ = input("\n[?] Press any key to continue >> ")
+            clear_console = True
+        elif selected_option == 9:
+            print()
+            if selected_model is None:
+                print("[*] No model selected.\n")
+            else:
+                if ground_truth is None:
+                    use_default_ground_truth = _get_str_input(
+                        "[?] Use default ground truth images (used in paper)",
+                        ["yes", "no"],
+                        "yes",
+                    )
+                    if use_default_ground_truth == "no":
+                        ground_truth = _load_ground_truth(
+                            imgs_folder, selected_model.classes
+                        )
+                    else:
+                        ground_truth = load_variable_from_file(
+                            "ground_truth", "saved_variables"
+                        )
+
+                if ground_truth is not None:
+                    print()
+                    perform_nested_k_fold_cross_validation_2(
+                        selected_model.training_set + selected_model.development_set,
+                        selected_model.get_parameters(),
+                        ground_truth,
+                        k=3,
+                    )
+
+            _ = input("\n[?] Press any key to continue >> ")
+            clear_console = True
         elif selected_option == 0:
             _continue_ = False
         else:

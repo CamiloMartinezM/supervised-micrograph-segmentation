@@ -165,7 +165,7 @@ class SuperpixelSegmentation:
         Returns:
             np.ndarray: Array of superpixels with 0 <= values < n_segments.
         """
-        if self.algorithm == "SLIC":
+        if self.algorithm == "slic":
             n_segments, sigma, compactness = self.parameters
             segments = slic(
                 image,
@@ -504,7 +504,7 @@ class Material:
                 + 3 * (S_0 ** (-0.5)) * (1 - fa ** 0.5)
                 + 92.5 * p_Si
             )
-        else:
+        else: # Pearlitic steel
             t = 0.15 * S_0 * p_C
             M = 2 * (S_0 - t)
             if S_0 >= 0.15:

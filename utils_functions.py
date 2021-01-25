@@ -634,6 +634,7 @@ def img_to_binary(img: np.ndarray) -> np.ndarray:
     imgLaplacian = cv2.filter2D(img, cv2.CV_32F, kernel)
     sharp = np.float32(img)
     imgResult = sharp - imgLaplacian  # New sharped image
+    
     # Convert back to 8bits gray scale
     imgResult = np.clip(imgResult, 0, 255)
     imgResult = imgResult.astype("uint8")
@@ -642,7 +643,7 @@ def img_to_binary(img: np.ndarray) -> np.ndarray:
     bw = cv2.cvtColor(imgResult, cv2.COLOR_BGR2GRAY)
     _, bw = cv2.threshold(bw, 40, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     cv2.normalize(bw, bw, 0, 1.0, cv2.NORM_MINMAX)
-
+    
     return bw
 
 
@@ -1005,8 +1006,9 @@ def k_folds(dataset: list, k: int) -> tuple:
     Yields:
         tuple: k-th train/test fold.
     """
-    kf = KFold(n_splits=k, shuffle=False, random_state=1)
-    for train_index, test_index in kf.split(np.array(dataset)):
+    kf = KFold(n_splits=k, shuffle=True, random_state=1)
+    dataset = np.array(dataset, dtype=object)
+    for train_index, test_index in kf.split(dataset):
         yield dataset[train_index], dataset[test_index]
 
 
@@ -1024,12 +1026,35 @@ def list_of_names_to_list_of_numpy_arrays(names: list, src: str) -> list:
     """
     result = []
     for name in names:
-        img = load_img(find_path_of_img(name, src, relative_path=True))
+        img = load_img(find_path_of_img(name, src, relative_path=True), with_io=True)
         result.append((name, img))
 
     return result
 
+def extract_windows_from_filenames(filenames: list, data: dict) -> dict:
+    """Extracts a dictionary of windows, where keys are labels and values are labeled
+    windows, from a dictionary of all windows (data) and a list of filenames to extract
+    the windows of.
+    
+    Args:
+        filenames (list): List of filenames.
+        data (dict): Full dictionary of windows.
+        
+    Returns:
+        dict: Dictionary of windows which correspond to the given filenames.
+    """
+    windows = {}
 
+    for label, windows_list in data.items():
+        for (filename, window) in windows_list:
+            if filename in filenames:
+                if label not in windows:
+                    windows[label] = []
+                windows[label].append(window)
+        
+    return windows
+            
+    
 def formatter(format_str, widths, *columns):
     """
     format_str describes the format of the report.
