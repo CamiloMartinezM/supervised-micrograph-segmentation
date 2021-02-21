@@ -7,4 +7,4 @@ This repository holds the code and final model for the bachelor thesis titled "A
 # License & copyright
 © Camilo Martínez M., <ca.martinezm2@uniandes.edu.co>
 
-Licensed under [GPL v3](LICENSE)
+Licensed under [GPL v3](LICENSE).
