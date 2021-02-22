@@ -31,7 +31,6 @@ from utils_functions import (
     train_dev_test_split_table,
     list_of_names_to_list_of_numpy_arrays,
     extract_windows_from_filenames,
-    save_variable_to_file,
     k_folds,
 )
 
@@ -71,6 +70,27 @@ class SegmentationModel:
         test_set: dict,
         algorithm_parameters: tuple = (100, 1.4, 100),
     ) -> None:
+        """
+        Args:
+            K (int): Number of clusters (i.e, number of textons).
+            name (str): Name of model (default, new). Used only for console.
+            classes (list): Classes/labels.
+            subsegment_class (tuple): Class to subsegment (pearlite) and the name of the
+                                      new resulting class. Ex: (pearlite, ferrite).
+            filterbank (str): Name of filterbank (MR8, other).
+            superpixel_algorithm (str): Algorithm for superpixel generation.
+            texton_matrix (np.ndarray): Computed texton matrix.
+            scales (dict): Dictionary with the information of the scales of the loaded
+                           micrographs.
+            windows_train (dict): Dictionary of training windows.
+            windows_dev (dict): Dictionary of development windows.
+            windows_test (dict): Dictionary of testing windows.
+            training_set (dict): Dictionary of images used for training.
+            development_set (dict): Dictionary of images used for development.
+            test_set (dict): Dictionary of images used for testing.
+            algorithm_parameters (tuple, optional): Parameters for the superpixel algorithm.
+                                                    Defaults to (100, 1.4, 100).
+        """
         self.K = K
         self.name = name
         self.filterbank = filterbank
@@ -731,7 +751,10 @@ def _take_option(selected_stuff: tuple) -> int:
 
 
 def _take_tool_option(selected_stuff: tuple) -> int:
-    (labeled_folder, preprocessed_folder,) = selected_stuff
+    (
+        labeled_folder,
+        preprocessed_folder,
+    ) = selected_stuff
     while True:
         try:
             option = "[?] Option "
@@ -1017,11 +1040,16 @@ def _update_parameters_from(
     parameters.update(new_parameters)
 
     feature_vectors = model.obtain_feature_vectors_of_labels(
-        windows_train, parameters["filterbank"], verbose=False,
+        windows_train,
+        parameters["filterbank"],
+        verbose=False,
     )
 
     classes, T, _ = model.train(
-        parameters["K"], parameters["filterbank"], feature_vectors, verbose=False,
+        parameters["K"],
+        parameters["filterbank"],
+        feature_vectors,
+        verbose=False,
     )
 
     parameters["texton_matrix"] = T
@@ -1287,7 +1315,7 @@ def segment_an_image(
         load_img(image_path),
         pixel_length_scale=pixel_length_scale,
         length_scale=length_scale,
-        name=path_leaf(image_path)
+        name=path_leaf(image_path),
     )
     _ = input("[?] Press any key to continue >> ")
 
@@ -1476,7 +1504,10 @@ def perform_nested_k_fold_cross_validation(
         outer_performances[ki] = {
             "best combination": best_combination,
             "stats": current_model.evaluate_segmentation_performance(
-                ground_truth, only=["Dev"], return_stats=True, verbose=False,
+                ground_truth,
+                only=["Dev"],
+                return_stats=True,
+                verbose=False,
             )["Dev"]["Overall Statistics"],
         }
         print("Done")
@@ -1718,7 +1749,10 @@ def main():
                     "[?] Scale length in µm", "int"
                 )
                 segment_an_image(
-                    img_name, selected_model, pixel_length_scale, length_scale, 
+                    img_name,
+                    selected_model,
+                    pixel_length_scale,
+                    length_scale,
                 )
 
             sleep(2)
