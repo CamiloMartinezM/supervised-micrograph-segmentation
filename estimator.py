@@ -32,47 +32,6 @@ from utils_functions import (highlight_class_in_img, img_to_binary,
 
 warnings.simplefilter('ignore', category=NumbaWarning)
 
-class CustomFFTConvolution(object):
-    def __init__(self, A, B, domain, threads=8):
-        MK =  B.shape[0]
-        NK = B.shape[1]
-        M = A.shape[0]
-        N = A.shape[1]
-
-        if domain =="same":
-            self.Y = M
-            self.X = N
-        elif domain == "valid":
-            self.Y = M - MK + 1
-            self.X = N - NK + 1
-        elif domain == "full":
-            self.Y = M + MK - 1
-            self.X = N + NK - 1
-
-        self.M = M + MK - 1
-        self.N = N + NK - 1
-
-        a = np.pad(A, ((0, MK - 1), (0, NK - 1)), mode='constant')
-        b = np.pad(B, ((0, M - 1), (0, N - 1)), mode='constant')
-
-        self.fft_A_obj = pyfftw.builders.rfft2(a, s=(self.M, self.N), threads=threads)
-        self.fft_B_obj = pyfftw.builders.rfft2(b, s=(self.M, self.N), threads=threads)
-        self.ifft_obj = pyfftw.builders.irfft2(self.fft_A_obj.output_array, s=(self.M, self.N), threads=threads)
-
-
-        self.offset_Y = int(np.floor((self.M - self.Y)/2))
-        self.offset_X = int(np.floor((self.N - self.X)/2))
-
-    def __call__(self, A, B):
-        MK =  B.shape[0]
-        NK = B.shape[1]
-        M = A.shape[0]
-        N = A.shape[1]
-
-        a = np.pad(A, ((0, MK - 1), (0, NK - 1)), mode='constant')
-        b = np.pad(B, ((0, M - 1), (0, N - 1)), mode='constant')
-
-        return self.ifft_obj(self.fft_A_obj(a) * self.fft_B_obj(b))[self.offset_Y:self.offset_Y + self.Y, self.offset_X:self.offset_X + self.X]
 
 class TextonSegmentation(BaseEstimator, ClassifierMixin):
     """An example of classifier"""
@@ -110,7 +69,7 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         textons = {}
         for label in self.feature_vectors:
             textons[label] = MiniBatchKMeans(n_clusters=self.K).fit(
-                self.feature_vectors[label]
+                self.feature_vectors[label].get()
             )
 
         # Matrix of texture textons
@@ -118,9 +77,9 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         # construct a matrix T of shape (C, K, 8) where each of the rows is a class and
         # each column has the texton k for k < K. Note that said texton must have 8
         # dimensions, since the pixels were represented precisely by 8 dimensions.
-        self.T = np.zeros((C, self.K, 8), dtype=np.float64)
+        self.T = cp.zeros((C, self.K, 8), dtype=np.float64)
         for i, label in enumerate(self.classes):
-            self.T[i] = textons[label].cluster_centers_
+            self.T[i] = cp.asarray(textons[label].cluster_centers_)
 
         return self
 
@@ -146,7 +105,7 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         X = X[:-2].reshape(original_shape)
 
         # The image is segmented using the given algorithm for superpixels generation
-        segments = self._generate_superpixels(X)
+        segments = cp.asarray(self._generate_superpixels(X))
 
         # Superpixels obtained from segments.
         # Every key in S is a superpixel and its values are the pixels belonging
@@ -155,18 +114,18 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
 
         # The new segments are created, i.e, actual segmentation.
         S_segmented = {}
-        class_matrix = np.zeros(X.shape, dtype=int)
-        for superpixel in np.unique(segments):
-            pixels = np.argwhere(segments == superpixel)
+        class_matrix = cp.zeros(X.shape, dtype=int)
+        for superpixel in cp.unique(segments):
+            pixels = cp.argwhere(segments == superpixel)
             i = pixels[:, 0]
             j = pixels[:, 1]
 
             feature_vectors = responses[i, j]
             predicted_class_idx = self._class_of(feature_vectors)
-            S_segmented[superpixel] = self.classes[predicted_class_idx]
-            class_matrix[i, j] = predicted_class_idx
+            S_segmented[int(superpixel)] = self.classes[predicted_class_idx.get()]
+            class_matrix[i, j] = int(predicted_class_idx)
 
-        class_matrix = np.append(class_matrix.flatten(), [500, 500])
+        class_matrix = np.append(class_matrix.flatten().get(), [500, 500])
         return class_matrix
 
     def _class_of(self, feature_vector: np.ndarray) -> int:
@@ -175,14 +134,14 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
 
         # Matrix which correlates texture texton distances and minimum distances of every
         # pixel.
-        A = np.sum(
-            np.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-16), axis=-1
+        A = cp.sum(
+            cp.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-16), axis=-1
         )
 
-        A_i = A.sum(axis=1)  # Sum over rows (i.e, over all pixels).
+        A_i = cp.sum(A, axis=1)  # Sum over rows (i.e, over all pixels).
 
         # Class with maximum probability of occurrence is chosen.
-        return A_i.argmax(axis=0)
+        return cp.argmax(A_i, axis=0)
 
     def _get_closest_texton_vector(self, feature_vectors: np.ndarray) -> np.ndarray:
         """Obtains a vector whose values are the minimum distances of each pixel of a
@@ -198,10 +157,10 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         # corresponds to the distance from the i-th pixel to the k-th texton
         # of the j-th class. Obtains a matrix which has the information of all 
         # possible distances from a pixel of a superpixel to every texton of every class.
-        distance_matrix = np.linalg.norm(
+        distance_matrix = cp.linalg.norm(
             feature_vectors[:, np.newaxis] - self.T[:, np.newaxis, :], axis=-1
         )
-        minimum_distance_vector = np.min(distance_matrix[np.newaxis], axis=(-1, 1))
+        minimum_distance_vector = cp.min(distance_matrix[np.newaxis], axis=(-1, 1))
         return minimum_distance_vector, distance_matrix
 
     def _get_response_vector(self, x: np.ndarray) -> np.ndarray:
@@ -218,8 +177,8 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         # Every response is stacked on top of the other in a single matrix whose last axis has
         # dimension 8. That means, there is now only one response image, in which each channel
         # contains the information of each of the 8 responses.
-        response = np.concatenate(
-            [np.expand_dims(r[i], axis=-1) for i in range(len(r))], axis=-1
+        response = cp.concatenate(
+            [cp.expand_dims(r[i], axis=-1) for i in range(len(r))], axis=-1
         )
         return response
 
@@ -264,16 +223,16 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         return s
 
     def _apply_filterbank(self, img: np.ndarray) -> np.ndarray:
-        img = cp.array(img.astype(np.float64))
-        result = np.zeros((8, *img.shape))
+        img = cp.array(img, dtype=np.float64)
+        result = cp.zeros((8, *img.shape))
         for i, battery in enumerate(self.filterbank):
             # response1 = [
             #     fftconvolve(img.get(), np.flip(filt.get()), mode="same") for filt in battery
             # ]
             response = [
-                cusignal.fftconvolve(img, np.flip(filt), mode="same").get() for filt in battery
+                cusignal.fftconvolve(img, cp.flip(filt), mode="same") for filt in battery
             ]
-            result[i] = np.max(response, axis=0)
+            result[i] = cp.max(cp.array(response), axis=0)
 
         return result
 
@@ -303,14 +262,16 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         def make_gaussian_filter(x, sigma, order=0):
             if order > 2:
                 raise ValueError("Only orders up to 2 are supported")
+
+            x = cp.array(x)
             # compute unnormalized Gaussian response
-            response = np.exp(-(x ** 2) / (2.0 * sigma ** 2))
+            response = cp.exp(-(x ** 2) / (2.0 * sigma ** 2))
             if order == 1:
                 response = -response * x
             elif order == 2:
                 response = response * (x ** 2 - sigma ** 2)
             # normalize
-            response /= np.linalg.norm(response, 1)
+            response /= cp.linalg.norm(response, 1)
             return response
 
         def makefilter(scale, phasey, pts, sup):
@@ -318,7 +279,7 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
             gy = make_gaussian_filter(pts[1, :], sigma=scale, order=phasey)
             f = (gx * gy).reshape(sup, sup)
             # normalize
-            f /= np.linalg.norm(f, 1)
+            f /= cp.linalg.norm(f, 1)
             return f
 
         support = 2 * radius + 1
@@ -340,10 +301,10 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         rot.append(make_gaussian_filter(length, sigma=10, order=2))
 
         # reshape rot and edge
-        edge = cp.asarray(edge)
-        edge = edge.reshape(len(sigmas), n_orientations, support, support).astype(np.float64)
-        bar = cp.asarray(bar).reshape(edge.shape).astype(np.float64)
-        rot = cp.asarray(rot)[:, np.newaxis, :, :].astype(np.float64)
+        edge = cp.asarray(edge, dtype=np.float64)
+        edge = edge.reshape(len(sigmas), n_orientations, support, support)
+        bar = cp.asarray(bar, dtype=np.float64).reshape(edge.shape)
+        rot = cp.asarray(rot, dtype=np.float64)[:, np.newaxis, :, :]
         return edge, bar, rot
 
     @staticmethod
@@ -355,7 +316,8 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
 
         return result
 
-    def _concatenate_responses(self, responses: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def _concatenate_responses(responses: np.ndarray) -> np.ndarray:
         """Helper function to obtain the complete feature vector of a label by concatenating
         all responses of images with the same label, so that a single matrix is obtained in
         which a row corresponds to a single pixel and each pixel possesses 8 dimensions,
@@ -366,12 +328,12 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
             np.ndarray: Numpy array of all responses, where a row corresponds to a single
                         pixel feature vector.
         """
-        return np.concatenate(
+        return cp.concatenate(
             [
                 response[:, i]
                 for response in responses
                 for i in range(response.shape[1])
-                if np.nan not in response[:, i]
+                if np.nan not in response[:, i].get()
             ]
         )
 
@@ -396,17 +358,17 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         for label in d:
             responses = []
 
-            for i, x in enumerate(d[label]):
+            for x in d[label]:
                 # Every annotated window/every window of a label
                 responses.append(self._get_response_vector(x))
 
-            responses_arr = np.array(responses, dtype=object)
+            # responses_arr = np.array(responses, dtype=object)
 
             # Every pixel of every single labeled window has 8 responses, which come from 8
             # response images. The following operations convert responses_arr to a matrix
             # where each row is a pixel. That means, each row will have 8 columns associated
             # with each pixel responses.
-            feature_vectors[label] = self._concatenate_responses(responses_arr)
+            feature_vectors[label] = self._concatenate_responses(responses)
 
         return feature_vectors
 
@@ -417,7 +379,7 @@ def _load_variable(filename: str):
     return variable
 
 
-def _load_training_set(filename: str = "training_windows.pickle") -> tuple:
+def _load_training_set(filename: str = "saved_variables/training_windows.pickle") -> tuple:
     all_windows_per_label = _load_variable(filename)
     X = []
     y = []
@@ -451,8 +413,8 @@ model = TextonSegmentation(K=6)
 model.fit(X, y)
 
 # %%
-gt = load_variable_from_file("ground_truth", os.getcwd())[:, 0, :, :]
-imgs = load_variable_from_file("ground_truth", os.getcwd())[:, 1, :, :] / 255.0
+gt = load_variable_from_file("ground_truth_with_originals", "saved_variables")[:, 0, :, :]
+imgs = load_variable_from_file("ground_truth_with_originals", "saved_variables")[:, 1, :, :] / 255.0
 
 n_samples = imgs.shape[0]
 n_pixels = imgs.shape[1] * imgs.shape[2]
@@ -468,7 +430,11 @@ y = np.append(gt, [[500, 500] for _ in range(51)], axis=1)
 # %%
 img = X[20]
 
-%timeit y = model.predict([img])
+import time
+tic = time.time()
+y = model.predict(X)
+toc = time.time()
+print(toc - tic, " s")
 
 # plt.figure()
 # plt.imshow(img[:-2].reshape((500, 500)), cmap="gray")

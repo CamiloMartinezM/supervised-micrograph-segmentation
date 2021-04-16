@@ -7,11 +7,11 @@ Created on Thu Nov 12 06:45:29 2020
 import os
 from itertools import chain, product
 from string import Formatter
-import pyfftw
 
 import matplotlib.cm
 import matplotlib.pyplot as plt
 import numpy as np
+import pyfftw
 from joblib import Parallel, delayed
 from scipy.io import loadmat
 from scipy.ndimage import convolve
@@ -26,7 +26,6 @@ from skimage.segmentation import (
 )
 
 from utils_functions import find_path_of_img, get_folder, load_img
-
 
 
 class Scaler:
@@ -149,7 +148,11 @@ class Scaler:
 class SuperpixelSegmentation:
     """Superpixel algorithm implementation with the library skimage."""
 
-    def __init__(self, algorithm: str, parameters: tuple,) -> None:
+    def __init__(
+        self,
+        algorithm: str,
+        parameters: tuple,
+    ) -> None:
         """
         # Args:
             n_segments (int, optional): Approximate number of superpixels to create.
@@ -506,7 +509,7 @@ class Material:
                 + 3 * (S_0 ** (-0.5)) * (1 - fa ** 0.5)
                 + 92.5 * p_Si
             )
-        else: # Pearlitic steel
+        else:  # Pearlitic steel
             t = 0.15 * S_0 * p_C
             M = 2 * (S_0 - t)
             if S_0 >= 0.15:
@@ -521,36 +524,41 @@ class Material:
 
     def tensile_strength(self) -> float:
         return self.sigma_u
-    
-class TrailingFormatter(Formatter):
 
+
+class TrailingFormatter(Formatter):
     def vformat(self, *args):
         self._automatic = None
         return super(TrailingFormatter, self).vformat(*args)
 
     def get_value(self, key, args, kwargs):
-        if key == '':
+        if key == "":
             if self._automatic is None:
                 self._automatic = 0
             elif self._automatic == -1:
-                raise ValueError("cannot switch from manual field specification "
-                                 "to automatic field numbering")
+                raise ValueError(
+                    "cannot switch from manual field specification "
+                    "to automatic field numbering"
+                )
             key = self._automatic
             self._automatic += 1
         elif isinstance(key, int):
             if self._automatic is None:
                 self._automatic = -1
             elif self._automatic != -1:
-                raise ValueError("cannot switch from automatic field numbering "
-                                 "to manual field specification")
+                raise ValueError(
+                    "cannot switch from automatic field numbering "
+                    "to manual field specification"
+                )
         return super(TrailingFormatter, self).get_value(key, args, kwargs)
 
     def format_field(self, value, spec):
-        if len(spec) > 1 and spec[0] == 't':
+        if len(spec) > 1 and spec[0] == "t":
             value = str(value) + spec[1]  # append the extra character
             spec = spec[2:]
         return super(TrailingFormatter, self).format_field(value, spec)
-    
+
+
 class MultiscaleStatistics:
     """This class generates the feature vectors of an image based on multiscale
     statistics in a procedure described in G. Impoco, L. Tuminello, N. Fucà, M. Caccamo,
@@ -642,3 +650,50 @@ class MultiscaleStatistics:
             feature_vectors[i::scales] = computed_statistics_per_scale[i].flatten()
 
         return feature_vectors.reshape((*img.shape, 3 * directions * scales))
+
+
+class CustomFFTConvolution(object):
+    def __init__(self, A, B, domain, threads=8):
+        MK = B.shape[0]
+        NK = B.shape[1]
+        M = A.shape[0]
+        N = A.shape[1]
+
+        if domain == "same":
+            self.Y = M
+            self.X = N
+        elif domain == "valid":
+            self.Y = M - MK + 1
+            self.X = N - NK + 1
+        elif domain == "full":
+            self.Y = M + MK - 1
+            self.X = N + NK - 1
+
+        self.M = M + MK - 1
+        self.N = N + NK - 1
+
+        a = np.pad(A, ((0, MK - 1), (0, NK - 1)), mode="constant")
+        b = np.pad(B, ((0, M - 1), (0, N - 1)), mode="constant")
+
+        self.fft_A_obj = pyfftw.builders.rfft2(a, s=(self.M, self.N), threads=threads)
+        self.fft_B_obj = pyfftw.builders.rfft2(b, s=(self.M, self.N), threads=threads)
+        self.ifft_obj = pyfftw.builders.irfft2(
+            self.fft_A_obj.output_array, s=(self.M, self.N), threads=threads
+        )
+
+        self.offset_Y = int(np.floor((self.M - self.Y) / 2))
+        self.offset_X = int(np.floor((self.N - self.X) / 2))
+
+    def __call__(self, A, B):
+        MK = B.shape[0]
+        NK = B.shape[1]
+        M = A.shape[0]
+        N = A.shape[1]
+
+        a = np.pad(A, ((0, MK - 1), (0, NK - 1)), mode="constant")
+        b = np.pad(B, ((0, M - 1), (0, N - 1)), mode="constant")
+
+        return self.ifft_obj(self.fft_A_obj(a) * self.fft_B_obj(b))[
+            self.offset_Y : self.offset_Y + self.Y,
+            self.offset_X : self.offset_X + self.X,
+        ]
