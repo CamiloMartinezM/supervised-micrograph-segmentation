@@ -7,6 +7,7 @@ Created on Thu Nov 12 06:45:29 2020
 import os
 from itertools import chain, product
 from string import Formatter
+import pyfftw
 
 import matplotlib.cm
 import matplotlib.pyplot as plt
@@ -25,6 +26,7 @@ from skimage.segmentation import (
 )
 
 from utils_functions import find_path_of_img, get_folder, load_img
+
 
 
 class Scaler:

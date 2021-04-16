@@ -14,7 +14,6 @@ from copy import deepcopy
 from pprint import pprint
 from sklearn.model_selection import KFold
 
-import cudf
 import cv2
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
@@ -28,7 +27,16 @@ from scipy.optimize import curve_fit
 from skimage import color, io
 from sklearn.metrics import jaccard_score
 
-
+def show_img(img: np.ndarray, figsize: tuple = (10, 8), cmap: str = "gray") -> None:
+    plt.figure(figsize=figsize)
+    if cmap:
+        plt.imshow(img, cmap=cmap)
+    else:
+        plt.imshow(img)
+    plt.axis("off")
+    plt.show()
+    plt.close()
+    
 def train_dev_test_split(
     data: dict, train_size: float = 0.7, dev_size: float = 0.2
 ) -> tuple:
@@ -449,16 +457,6 @@ def matrix_to_excel(
     else:
         with pd.ExcelWriter(f"{filename}") as writer:
             df.to_excel(writer, sheet_name=sheetname, index=False)
-
-
-def np2cudf(df: np.ndarray) -> cudf.DataFrame:
-    """Convert numpy array to cuDF dataframe."""
-    df = pd.DataFrame({"fea%d" % i: df[:, i] for i in range(df.shape[1])})
-    pdf = cudf.DataFrame()
-    for c, column in enumerate(df):
-        pdf[str(c)] = df[column]
-    return pdf
-
 
 def compare2imgs(
     img_1: np.ndarray,
