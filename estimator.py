@@ -101,47 +101,60 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         return [self._segment(x) for x in X]
 
     def _segment(self, X: np.ndarray) -> tuple:
-        original_shape = (int(X[-2]), int(X[-1]))
-        X = X[:-2].reshape(original_shape)
+        original_shape = X[-2::].astype(int)
+        X_2d = X[:-2].reshape(original_shape)
 
         # The image is segmented using the given algorithm for superpixels generation
-        segments = cp.asarray(self._generate_superpixels(X))
+        segments = cp.asarray(self._generate_superpixels(X_2d))
+        superpixels = cp.unique(segments)
 
-        # Superpixels obtained from segments.
-        # Every key in S is a superpixel and its values are the pixels belonging
-        # to it.
-        responses = self._get_response_vector(X)
+        # Responses of every pixel in the input image
+        responses = self._get_response_vector(X_2d)
 
-        # The new segments are created, i.e, actual segmentation.
-        S_segmented = {}
-        class_matrix = cp.zeros(X.shape, dtype=int)
-        for superpixel in cp.unique(segments):
-            pixels = cp.argwhere(segments == superpixel)
+        class_matrix = np.zeros(X_2d.shape, dtype=int)
+        for superpixel in superpixels:
+            pixels = cp.argwhere(segments == superpixel) 
             i = pixels[:, 0]
             j = pixels[:, 1]
-
             feature_vectors = responses[i, j]
             predicted_class_idx = self._class_of(feature_vectors)
-            S_segmented[int(superpixel)] = self.classes[predicted_class_idx.get()]
-            class_matrix[i, j] = int(predicted_class_idx)
+            class_matrix[i.get(), j.get()] = int(predicted_class_idx)
 
-        class_matrix = np.append(class_matrix.flatten().get(), [500, 500])
-        return class_matrix
+        if self.subsegment_class:
+            # Check if the class to subsegment is present in the segmentation
+            if self.subsegment_class in cp.unique(class_matrix):
+                new_class = cp.max(self.classes) + 1
+                mapping = {0: self.subsegment_class, 1: new_class}
+            
+                subsegmented_X = highlight_class_in_img(
+                    img_to_binary((X_2d * 255).astype(np.uint8)), 
+                    class_matrix, 
+                    self.subsegment_class, 
+                    fill_value=-1
+                )
+                
+                for binary_value, corresponding_class in mapping.items():
+                    class_matrix[subsegmented_X == binary_value] = corresponding_class
+
+                np.insert(self.classes, -1, new_class)
+
+        # The original shape of X is concatenated at the end of the flattened class
+        # matrix
+        return np.concatenate((class_matrix.ravel(), original_shape), axis=0)
 
     def _class_of(self, feature_vector: np.ndarray) -> int:
         # Distance matrices.
         minimum_distance_vector, distance_matrix = self._get_closest_texton_vector(feature_vector)
 
         # Matrix which correlates texture texton distances and minimum distances of every
-        # pixel.
+        # pixel. Sum over axis=2 is the sum over rows, i.e, all pixels.
         A = cp.sum(
-            cp.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-16), axis=-1
+            cp.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-16), 
+            axis=(-1, 1)
         )
 
-        A_i = cp.sum(A, axis=1)  # Sum over rows (i.e, over all pixels).
-
         # Class with maximum probability of occurrence is chosen.
-        return cp.argmax(A_i, axis=0)
+        return cp.argmax(A, axis=0)
 
     def _get_closest_texton_vector(self, feature_vectors: np.ndarray) -> np.ndarray:
         """Obtains a vector whose values are the minimum distances of each pixel of a
@@ -173,14 +186,7 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         """
         # 8 responses from image
         r = self._apply_filterbank(x)
-
-        # Every response is stacked on top of the other in a single matrix whose last axis has
-        # dimension 8. That means, there is now only one response image, in which each channel
-        # contains the information of each of the 8 responses.
-        response = cp.concatenate(
-            [cp.expand_dims(r[i], axis=-1) for i in range(len(r))], axis=-1
-        )
-        return response
+        return r
 
     def _generate_superpixels(self, image: np.ndarray) -> np.ndarray:
         """Segments the input image in superpixels.
@@ -223,8 +229,11 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         return s
 
     def _apply_filterbank(self, img: np.ndarray) -> np.ndarray:
-        img = cp.array(img, dtype=np.float64)
-        result = cp.zeros((8, *img.shape))
+        img = cp.asarray(img).astype(np.float64)
+        result = cp.zeros((*img.shape, 8))
+        # Every response is stacked on top of the other in a single matrix whose last axis has
+        # dimension 8. That means, there is now only one response image, in which each channel
+        # contains the information of each of the 8 responses.
         for i, battery in enumerate(self.filterbank):
             # response1 = [
             #     fftconvolve(img.get(), np.flip(filt.get()), mode="same") for filt in battery
@@ -232,7 +241,7 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
             response = [
                 cusignal.fftconvolve(img, cp.flip(filt), mode="same") for filt in battery
             ]
-            result[i] = cp.max(cp.array(response), axis=0)
+            result[:, :, i] = cp.max(cp.array(response), axis=0)
 
         return result
 
@@ -399,7 +408,7 @@ def _load_training_set(filename: str = "saved_variables/training_windows.pickle"
 
     return X, y, label_mapping
 
-
+# %%
 windows, labels, label_mapping = _load_training_set()
 c = list(zip(windows, labels))
 random.shuffle(c)
@@ -408,8 +417,7 @@ windows, labels = zip(*c)
 X = np.array(windows, dtype="object")
 y = np.array(labels, dtype=int)
 
-# %%
-model = TextonSegmentation(K=6)
+model = TextonSegmentation(K=20, subsegment_class=label_mapping["pearlite"])
 model.fit(X, y)
 
 # %%
@@ -430,16 +438,13 @@ y = np.append(gt, [[500, 500] for _ in range(51)], axis=1)
 # %%
 img = X[20]
 
-import time
-tic = time.time()
-y = model.predict(X)
-toc = time.time()
-print(toc - tic, " s")
+%timeit y = model.predict([img])
 
-# plt.figure()
-# plt.imshow(img[:-2].reshape((500, 500)), cmap="gray")
-# plt.imshow(y[0][:-2].reshape((500, 500)), alpha=0.5)
-# plt.show()
-# plt.close()
+plt.figure()
+plt.imshow(img[:-2].reshape((500, 500)), cmap="gray")
+plt.imshow(y[0][:-2].reshape((500, 500)), alpha=0.5)
+plt.show()
+plt.close()
+
 
 # %%

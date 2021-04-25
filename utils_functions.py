@@ -627,19 +627,20 @@ def img_to_binary(img: np.ndarray) -> np.ndarray:
     img[np.all(img == 255, axis=2)] = 0
 
     kernel = np.array(
-        [[1, 1, 1], [1, -8, 1], [1, 1, 1]], dtype=np.float32
+        [[1, 1, 1], 
+         [1, -8, 1], 
+         [1, 1, 1]], dtype=np.float32
     )  # Laplacian kernel
-    imgLaplacian = cv2.filter2D(img, cv2.CV_32F, kernel)
-    sharp = np.float32(img)
-    imgResult = sharp - imgLaplacian  # New sharped image
+    imgLaplacian = cv2.filter2D(img, cv2.CV_64F, kernel)
+    imgResult = img - imgLaplacian  # Sharpened image
     
     # Convert back to 8bits gray scale
     imgResult = np.clip(imgResult, 0, 255)
-    imgResult = imgResult.astype("uint8")
+    imgResult = imgResult.astype(np.uint8)
 
     # Binary image (every pixel is either a 0 or a 1)
     bw = cv2.cvtColor(imgResult, cv2.COLOR_BGR2GRAY)
-    _, bw = cv2.threshold(bw, 40, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    _, bw = cv2.threshold(bw, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     cv2.normalize(bw, bw, 0, 1.0, cv2.NORM_MINMAX)
     
     return bw
@@ -733,7 +734,7 @@ def highlight_class_in_img(
     Returns
         np.ndarray: Highlighted image.
     """
-    result = deepcopy(img)
+    result = img.copy()
     result[mask != class_] = fill_value
     result[mask == class_] = img[mask == class_]
     if keep_class is not None:
