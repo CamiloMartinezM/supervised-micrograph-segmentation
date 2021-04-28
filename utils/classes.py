@@ -25,7 +25,7 @@ from skimage.segmentation import (
     watershed,
 )
 
-from utils_functions import find_path_of_img, get_folder, load_img
+from utils.functions import find_path_of_img, get_folder, load_img
 
 
 class Scaler:
@@ -148,11 +148,7 @@ class Scaler:
 class SuperpixelSegmentation:
     """Superpixel algorithm implementation with the library skimage."""
 
-    def __init__(
-        self,
-        algorithm: str,
-        parameters: tuple,
-    ) -> None:
+    def __init__(self, algorithm: str, parameters: tuple,) -> None:
         """
         # Args:
             n_segments (int, optional): Approximate number of superpixels to create.

@@ -4,44 +4,44 @@ Created on Wed Jan 27 15:22:09 2021
 
 @author: Camilo Martínez
 """
-import os
-import pickle
-import random
-import warnings
+import importlib
 from itertools import chain
 
-import cupy as cp
-import cusignal
-import cv2
-import matplotlib.pyplot as plt
 import numpy as np
-import pyfftw
-import scipy.fftpack
-from numba import double, jit
-from numba.core.errors import NumbaWarning
-from scipy.signal import fftconvolve, oaconvolve
+import scipy.sparse
 from skimage.filters import sobel
-from skimage.segmentation import (felzenszwalb, mark_boundaries, quickshift,
-                                  slic, watershed)
-from sklearn.base import BaseEstimator, ClassifierMixin, TransformerMixin
+from skimage.segmentation import felzenszwalb, quickshift, slic, watershed
+from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.cluster import MiniBatchKMeans
-from sklearn.model_selection import cross_val_score
+from sklearn.metrics import accuracy_score
+from sklearn.utils import check_random_state
+from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
 
-from utils_functions import (highlight_class_in_img, img_to_binary,
-                             load_variable_from_file, show_img)
+from utils.functions import highlight_class_in_img, img_to_binary
 
-warnings.simplefilter('ignore', category=NumbaWarning)
+# Import cupy if it exists, otherwise use numpy as np and cp
+cupy_spec = importlib.util.find_spec("cupy")
+if cupy_spec:
+    import cupy as cp
+else:
+    cp = np
+
+# Import fftconvolve from cusignal if it exists, otherwise import it from scipy.signal
+cusignal_spec = importlib.util.find_spec("cusignal")
+if cusignal_spec:
+    from cusignal import fftconvolve
+else:
+    from scipy.signal import fftconvolve
 
 
-class TextonSegmentation(BaseEstimator, ClassifierMixin):
-    """An example of classifier"""
-
+class TextonEstimator(BaseEstimator, ClassifierMixin):
     def __init__(
         self,
         K: int = 1,
         algorithm: str = "felzenszwalb",
         algorithm_parameters: tuple = (125, 0.8, 115),
         subsegment_class: tuple = None,
+        random_state: int = None,
     ):
         """
         Called when initializing the classifier
@@ -50,36 +50,73 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         self.algorithm = algorithm
         self.algorithm_parameters = algorithm_parameters
         self.subsegment_class = subsegment_class
-
-        sigmas, n_orientations = [1, 2, 4], 6
-        edge, bar, rot = self._makeRFSfilters(
-            sigmas=sigmas, n_orientations=n_orientations
-        )
-        self.filterbank = list(chain(edge, bar, rot))
+        self.random_state = random_state
 
     def fit(self, X, y=None):
         """
         Args:
             X (list): [matrix()]
         """
-        self.feature_vectors = self._feature_vectors_from_dict(self._to_dict(X, y))
-        self.classes = np.array(list(self.feature_vectors.keys()))
-        C = len(self.classes)
+        if scipy.sparse.issparse(X):
+            raise ValueError("sparse input is not supported")
 
-        textons = {}
-        for label in self.feature_vectors:
-            textons[label] = MiniBatchKMeans(n_clusters=self.K).fit(
-                self.feature_vectors[label].get()
-            )
+        self.random_state_ = check_random_state(self.random_state)
 
-        # Matrix of texture textons
+        # Perform sklearn's validation if it is possible
+        try:
+            X, y = check_X_y(X, y)
+        except ValueError as e:
+            if str(e) != "setting an array element with a sequence.":
+                raise e
+
+        # Classifier can't train with only one feature
+        if any(x.shape[0] <= 1 for x in X):
+            raise ValueError("Classifier can't train with n_features = 1")
+
+        # Extract labels/classes
+        self.classes_, y = np.unique(y, return_inverse=True)
+
+        # Perform simple validations
+        if len(self.classes_) == 1:
+            raise ValueError("Classifier can't train when only one class is present")
+        if y.shape != (X.shape[0],):
+            raise ValueError("X and y have incorrect shapes")
+
+        # Raise ValueError if there are negative float values
+        if self.classes_.dtype.kind == "f":
+            if any(self.classes_[i] < 0 for i in range(self.classes_.shape[0])):
+                raise ValueError("Unknown label type: negative values")
+        # If it's not float, accept only integer or string labels/classes
+        elif self.classes_.dtype.kind not in "iOU":
+            raise ValueError(f"Unknown label type: {self.classes_.dtype}")
+
+        # Maximum number of features in X
+        if len(X.shape) > 1:
+            self.n_features_in_ = X.shape[1]
+        else:
+            self.n_features_in_ = np.max([x.shape[0] for x in X])
+
+        # Build the filterbank
+        sigmas, n_orientations = [1, 2, 4], 6
+        edge, bar, rot = self._makeRFSfilters(
+            sigmas=sigmas, n_orientations=n_orientations
+        )
+        self.filterbank_ = list(chain(edge, bar, rot))
+
+        # Get the feature vectors for each class
+        self.feature_vectors_ = self._feature_vectors_from(X, y)
+
+        # Learn the textons
         # Once the textons have been learned for each of the classes, it is possible to
         # construct a matrix T of shape (C, K, 8) where each of the rows is a class and
         # each column has the texton k for k < K. Note that said texton must have 8
         # dimensions, since the pixels were represented precisely by 8 dimensions.
-        self.T = cp.zeros((C, self.K, 8), dtype=np.float64)
-        for i, label in enumerate(self.classes):
-            self.T[i] = cp.asarray(textons[label].cluster_centers_)
+        self.T_ = cp.zeros((self.classes_.shape[0], self.K, 8), dtype=np.float64)
+        for i, label in enumerate(self.feature_vectors_):
+            textons = MiniBatchKMeans(
+                n_clusters=self.K, batch_size=2048, random_state=self.random_state_
+            ).fit(self.feature_vectors_[label].get())
+            self.T_[i] = cp.asarray(textons.cluster_centers_)
 
         return self
 
@@ -93,12 +130,33 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         Returns:
             str: Predicted class.
         """
-        try:
-            getattr(self, "T")
-        except AttributeError:
-            raise RuntimeError("Untrained classifier")
+        # Check is fit had been called
+        check_is_fitted(self)
 
-        return [self._segment(x) for x in X]
+        # Input validation
+        X = check_array(X)
+
+        return np.array([self._segment(x) for x in X], dtype=self.classes_.dtype)
+
+    def score(self, X, y, sample_weight=None):
+        # Calculate predicted label for each x
+        y_pred = self.predict_windows(X)
+        return accuracy_score(y, y_pred, sample_weight=sample_weight)
+
+    def predict_windows(self, X: np.ndarray):
+        y_pred = np.zeros((X.shape[0],), dtype=int)
+        for i, x in enumerate(X):
+            # Reshape to original shape
+            x_2d = x[:-2].reshape(x[-2::].astype(int))
+
+            # Obtain feature vector
+            feature_vector = self._get_response_vector(x_2d)
+            feature_vector = feature_vector.reshape(-1, feature_vector.shape[-1])
+
+            # Predict the class for that feature vector
+            y_pred[i] = self._class_of(feature_vector)
+
+        return y_pred
 
     def _segment(self, X: np.ndarray) -> tuple:
         original_shape = X[-2::].astype(int)
@@ -111,50 +169,51 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         # Responses of every pixel in the input image
         responses = self._get_response_vector(X_2d)
 
-        class_matrix = np.zeros(X_2d.shape, dtype=int)
+        class_matrix = np.zeros(X_2d.shape, dtype=self.classes_.dtype)
         for superpixel in superpixels:
-            pixels = cp.argwhere(segments == superpixel) 
+            pixels = cp.argwhere(segments == superpixel)
             i = pixels[:, 0]
             j = pixels[:, 1]
             feature_vectors = responses[i, j]
-            predicted_class_idx = self._class_of(feature_vectors)
-            class_matrix[i.get(), j.get()] = int(predicted_class_idx)
+            class_matrix[i.get(), j.get()] = self._class_of(feature_vectors)
 
         if self.subsegment_class:
             # Check if the class to subsegment is present in the segmentation
             if self.subsegment_class in cp.unique(class_matrix):
-                new_class = cp.max(self.classes) + 1
+                new_class = cp.max(self.classes_) + 1
                 mapping = {0: self.subsegment_class, 1: new_class}
-            
+
                 subsegmented_X = highlight_class_in_img(
-                    img_to_binary((X_2d * 255).astype(np.uint8)), 
-                    class_matrix, 
-                    self.subsegment_class, 
-                    fill_value=-1
+                    img_to_binary((X_2d * 255).astype(np.uint8)),
+                    class_matrix,
+                    self.subsegment_class,
+                    fill_value=-1,
                 )
-                
+
                 for binary_value, corresponding_class in mapping.items():
                     class_matrix[subsegmented_X == binary_value] = corresponding_class
 
-                np.insert(self.classes, -1, new_class)
+                np.insert(self.classes_, -1, new_class)
 
         # The original shape of X is concatenated at the end of the flattened class
         # matrix
-        return np.concatenate((class_matrix.ravel(), original_shape), axis=0)
+        return class_matrix.ravel()
 
     def _class_of(self, feature_vector: np.ndarray) -> int:
         # Distance matrices.
-        minimum_distance_vector, distance_matrix = self._get_closest_texton_vector(feature_vector)
+        minimum_distance_vector, distance_matrix = self._get_closest_texton_vector(
+            feature_vector
+        )
 
         # Matrix which correlates texture texton distances and minimum distances of every
         # pixel. Sum over axis=2 is the sum over rows, i.e, all pixels.
         A = cp.sum(
-            cp.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-16), 
-            axis=(-1, 1)
+            cp.isclose(minimum_distance_vector.T, distance_matrix, rtol=1e-16),
+            axis=(-1, 1),
         )
 
         # Class with maximum probability of occurrence is chosen.
-        return cp.argmax(A, axis=0)
+        return self.classes_[cp.argmax(A, axis=0).get()]
 
     def _get_closest_texton_vector(self, feature_vectors: np.ndarray) -> np.ndarray:
         """Obtains a vector whose values are the minimum distances of each pixel of a
@@ -168,10 +227,10 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         """
         # Matrix of shape (C, NUM_PIXELS, K). Every (i, j, k) matrix value
         # corresponds to the distance from the i-th pixel to the k-th texton
-        # of the j-th class. Obtains a matrix which has the information of all 
+        # of the j-th class. Obtains a matrix which has the information of all
         # possible distances from a pixel of a superpixel to every texton of every class.
         distance_matrix = cp.linalg.norm(
-            feature_vectors[:, np.newaxis] - self.T[:, np.newaxis, :], axis=-1
+            feature_vectors[:, np.newaxis] - self.T_[:, np.newaxis, :], axis=-1
         )
         minimum_distance_vector = cp.min(distance_matrix[np.newaxis], axis=(-1, 1))
         return minimum_distance_vector, distance_matrix
@@ -185,8 +244,7 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
             np.ndarray: Numpy array of shape (*img.shape, 8).
         """
         # 8 responses from image
-        r = self._apply_filterbank(x)
-        return r
+        return self._apply_filterbank(x)
 
     def _generate_superpixels(self, image: np.ndarray) -> np.ndarray:
         """Segments the input image in superpixels.
@@ -234,16 +292,52 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         # Every response is stacked on top of the other in a single matrix whose last axis has
         # dimension 8. That means, there is now only one response image, in which each channel
         # contains the information of each of the 8 responses.
-        for i, battery in enumerate(self.filterbank):
-            # response1 = [
-            #     fftconvolve(img.get(), np.flip(filt.get()), mode="same") for filt in battery
-            # ]
+        for i, battery in enumerate(self.filterbank_):
             response = [
-                cusignal.fftconvolve(img, cp.flip(filt), mode="same") for filt in battery
+                fftconvolve(img.get(), np.flip(filt.get()), mode="same")
+                for filt in battery
             ]
             result[:, :, i] = cp.max(cp.array(response), axis=0)
 
         return result
+
+    def _feature_vectors_from(self, X: np.ndarray, y: np.ndarray) -> dict:
+        """Each pixel of each annotated window has 8 responses associated with the filters
+        used. These responses must be unified in some way, since they are part of the same
+        class. Therefore, the following implementation transforms each of the responses
+        obtained per window into a matrix where each row is a pixel of an annotation. And,
+        since each of the annotations has 8 associated responses, each pixel is represented
+        by an 8-dimensional vector. This means that each row will have 8 columns,
+        corresponding to the value obtained from the filter. On the other hand, since there
+        are several classes, said matrix will be stored in a dictionary, whose keys will be
+        the classes found.
+
+        Args:
+            windows (dict): Dictionary of windows per label.
+            verbose (bool): True is additional information is needed. Defaults to True.
+
+        Returns:
+            dict: Dictionary of feature vectors per label. Keys corresponds to labels and
+                  values are the feature vectors of that label.
+        """
+        feature_vectors = {}
+        for label in np.unique(y):
+            windows = X[y == label]
+            responses = []
+            for x in windows:
+                # x is reshaped to its original shape using the last two values
+                x_2d = x[:-2].reshape(x[-2::].astype(int))
+
+                # Every annotated window/every window of a label
+                responses.append(self._get_response_vector(x_2d))
+
+            # Every pixel of every single labeled window has 8 responses, which come from 8
+            # response images. The following operations convert responses_arr to a matrix
+            # where each row is a pixel. That means, each row will have 8 columns associated
+            # with each pixel responses.
+            feature_vectors[label] = self._concatenate_responses(responses)
+
+        return feature_vectors
 
     @staticmethod
     def _makeRFSfilters(
@@ -317,15 +411,6 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
         return edge, bar, rot
 
     @staticmethod
-    def _to_dict(X, y) -> dict:
-        result = {}
-        labels = np.unique(y)
-        for label in labels:
-            result[label] = X[y == label]
-
-        return result
-
-    @staticmethod
     def _concatenate_responses(responses: np.ndarray) -> np.ndarray:
         """Helper function to obtain the complete feature vector of a label by concatenating
         all responses of images with the same label, so that a single matrix is obtained in
@@ -345,106 +430,3 @@ class TextonSegmentation(BaseEstimator, ClassifierMixin):
                 if np.nan not in response[:, i].get()
             ]
         )
-
-    def _feature_vectors_from_dict(self, d: dict) -> dict:
-        """Each pixel of each annotated window has 8 responses associated with the filters
-        used. These responses must be unified in some way, since they are part of the same
-        class. Therefore, the following implementation transforms each of the responses
-        obtained per window into a matrix where each row is a pixel of an annotation. And,
-        since each of the annotations has 8 associated responses, each pixel is represented
-        by an 8-dimensional vector. This means that each row will have 8 columns,
-        corresponding to the value obtained from the filter. On the other hand, since there
-        are several classes, said matrix will be stored in a dictionary, whose keys will be
-        the classes found.
-        Args:
-            windows (dict): Dictionary of windows per label.
-            verbose (bool): True is additional information is needed. Defaults to True.
-        Returns:
-            dict: Dictionary of feature vectors per label. Keys corresponds to labels and
-                  values are the feature vectors of that label.
-        """
-        feature_vectors = {}
-        for label in d:
-            responses = []
-
-            for x in d[label]:
-                # Every annotated window/every window of a label
-                responses.append(self._get_response_vector(x))
-
-            # responses_arr = np.array(responses, dtype=object)
-
-            # Every pixel of every single labeled window has 8 responses, which come from 8
-            # response images. The following operations convert responses_arr to a matrix
-            # where each row is a pixel. That means, each row will have 8 columns associated
-            # with each pixel responses.
-            feature_vectors[label] = self._concatenate_responses(responses)
-
-        return feature_vectors
-
-
-def _load_variable(filename: str):
-    with open(filename, "rb") as f:
-        variable = pickle.load(f)
-    return variable
-
-
-def _load_training_set(filename: str = "saved_variables/training_windows.pickle") -> tuple:
-    all_windows_per_label = _load_variable(filename)
-    X = []
-    y = []
-    label_mapping = {}
-    for label, windows in all_windows_per_label.items():
-        if label not in label_mapping:
-            existing_labels = list(label_mapping.values())
-            if existing_labels:
-                max_key = max(existing_labels)
-            else:
-                max_key = -1
-            label_mapping[label] = max_key + 1
-
-        for window in windows:
-            X.append(window)
-            y.append(label_mapping[label])
-
-    return X, y, label_mapping
-
-# %%
-windows, labels, label_mapping = _load_training_set()
-c = list(zip(windows, labels))
-random.shuffle(c)
-windows, labels = zip(*c)
-
-X = np.array(windows, dtype="object")
-y = np.array(labels, dtype=int)
-
-model = TextonSegmentation(K=20, subsegment_class=label_mapping["pearlite"])
-model.fit(X, y)
-
-# %%
-gt = load_variable_from_file("ground_truth_with_originals", "saved_variables")[:, 0, :, :]
-imgs = load_variable_from_file("ground_truth_with_originals", "saved_variables")[:, 1, :, :] / 255.0
-
-n_samples = imgs.shape[0]
-n_pixels = imgs.shape[1] * imgs.shape[2]
-
-imgs = imgs.reshape(n_samples, n_pixels)
-gt = gt.reshape(n_samples, n_pixels)
-
-X = np.append(imgs, [[500, 500] for _ in range(51)], axis=1)
-y = np.append(gt, [[500, 500] for _ in range(51)], axis=1)
-
-# cross_val_score(TextonSegmentation(), X, y, scoring = 'neg_mean_squared_error')
-
-# %%
-img = X[20]
-
-%timeit y = model.predict([img])
-
-plt.figure()
-plt.imshow(img[:-2].reshape((500, 500)), cmap="gray")
-plt.imshow(y[0][:-2].reshape((500, 500)), alpha=0.5)
-plt.show()
-plt.close()
-
-
-# %%
