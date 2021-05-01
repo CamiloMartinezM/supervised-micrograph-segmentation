@@ -5,19 +5,52 @@ Created on Wed Jan 27 15:22:09 2021
 @author: Camilo Martínez
 """
 import importlib
+import itertools
 from itertools import chain
+from typing import Optional
 
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy.sparse
+from matplotlib.patches import Patch
 from skimage.filters import sobel
 from skimage.segmentation import felzenszwalb, quickshift, slic, watershed
 from sklearn.base import BaseEstimator, ClassifierMixin
-from sklearn.cluster import MiniBatchKMeans
 from sklearn.metrics import accuracy_score
 from sklearn.utils import check_random_state
 from sklearn.utils.validation import check_array, check_is_fitted, check_X_y
 
-from utils.functions import highlight_class_in_img, img_to_binary
+from utils.functions import highlight_class_in_img, img_to_binary, random_colors
+
+# Import KMeans from cuml if it exists, otherwise go for sklearn's MiniBatchKMeans
+cuml_spec = importlib.util.find_spec("cuml")
+if cuml_spec:
+    from cuml import KMeans
+else:
+    from sklearn.cluster import MiniBatchKMeans as KMeans
+    
+# Import tsnecuda it it exists, otherwise check for fitsne, openTSNE, MultiCoreTSNE in that order.
+# If none of those exist, go for sklearn's implementation
+tsnecuda_spec = importlib.util.find_spec(
+    "tsnecuda"
+)  # https://github.com/CannyLab/tsne-cuda
+fitsne_spec = importlib.util.find_spec("fitsne")  # https://github.com/KlugerLab/FIt-SNE
+opentsne_spec = importlib.util.find_spec(
+    "openTSNE"
+)  # https://github.com/pavlin-policar/openTSNE
+multicoretsne_spec = importlib.util.find_spec(
+    "MulticoreTSNE"
+)  # https://github.com/DmitryUlyanov/Multicore-TSNE
+if tsnecuda_spec:
+    from tsnecuda import TSNE
+elif fitsne_spec:
+    from fitsne import fast_tsne as TSNE
+elif opentsne_spec:
+    from openTSNE import TSNE
+elif multicoretsne_spec:
+    from MulticoreTSNE import MulticoreTSNE as TSNE
+else:
+    from sklearn.manifold import TSNE
 
 # Import cupy if it exists, otherwise use numpy as np and cp
 cupy_spec = importlib.util.find_spec("cupy")
@@ -112,11 +145,17 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
         # each column has the texton k for k < K. Note that said texton must have 8
         # dimensions, since the pixels were represented precisely by 8 dimensions.
         self.T_ = cp.zeros((self.classes_.shape[0], self.K, 8), dtype=np.float64)
+        self.T_labels_ = np.zeros((self.classes_.shape[0],), dtype=object)
         for i, label in enumerate(self.feature_vectors_):
             textons = MiniBatchKMeans(
                 n_clusters=self.K, batch_size=2048, random_state=self.random_state_
             ).fit(self.feature_vectors_[label].get())
+
+            # Textons cluster centers
             self.T_[i] = cp.asarray(textons.cluster_centers_)
+
+            # Cluster labels (used for visualization)
+            self.T_labels_[i] = textons.labels_
 
         return self
 
@@ -157,6 +196,61 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
             y_pred[i] = self._class_of(feature_vector)
 
         return y_pred
+
+    def visualize_clusters(self, sample: Optional[int] = None) -> None:
+        # Check is fit had been called
+        check_is_fitted(self)
+
+        # Instantiate a t-SNE model
+        tsne_model = TSNE(perplexity=50, learning_rate=10, n_components=2, n_jobs=-1)
+
+        # Extract a sample from the data
+        X_sample = np.zeros((self.classes_.shape[0]), dtype=object)
+        clusters = np.zeros((self.classes_.shape[0]), dtype=object)
+        for i, label in enumerate(self.feature_vectors_):
+            idx = np.random.randint(0, self.feature_vectors_[label].shape[0], sample)
+            X_sample[i], clusters[i] = (
+                self.feature_vectors_[label].get()[idx],
+                self.T_labels_[i][idx],
+            )
+
+        # N distinct random colors
+        colors = random_colors(self.classes_.shape[0] * self.K)
+
+        k = 0
+        fig, ax = plt.subplots()
+        patches = []
+
+        # Iterate over every sampled data per label
+        for i, X in enumerate(X_sample):
+            # Embed in a 2 dimensional space
+            X_embedded = tsne_model.fit_transform(X)
+
+            patches.append([])
+            # Scatter plot of points in X_embedded that were assigned to a cluster, with different
+            # colors for each cluster
+            for cluster in range(self.K):
+                cluster_data = X_embedded[clusters[i] == cluster]
+                ax.scatter(cluster_data[:, 0], cluster_data[:, 1], color=colors[k])
+                patches[i].append(
+                    Patch(facecolor=colors[k], edgecolor="k")
+                )  # used for legends
+                k += 1
+
+        handles = list(itertools.chain.from_iterable(zip(patches[0], patches[1])))
+        labels = [""] * self.classes_.shape[0] * self.K
+        for i, class_ in enumerate(self.classes_):
+            labels[-(self.classes_.shape[0] - i)] = class_
+
+        ax.legend(
+            handles=handles,
+            labels=labels,
+            ncol=self.K,
+            handletextpad=0.5,
+            handlelength=1.0,
+            columnspacing=-0.5,
+            fontsize=16,
+        )
 
     def _segment(self, X: np.ndarray) -> tuple:
         original_shape = X[-2::].astype(int)

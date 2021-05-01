@@ -4,13 +4,16 @@ Created on Wed Nov 11 17:11:12 2020
 
 @author: Camilo Martínez
 """
+import colorsys
 import itertools
 import math
 import os
 import pickle
 import random
 import textwrap
+from fractions import Fraction
 from pprint import pprint
+from typing import Iterable, Tuple
 
 import cv2
 import matplotlib.image as mpimg
@@ -25,6 +28,11 @@ from scipy.optimize import curve_fit
 from skimage import color, io
 from sklearn.metrics import jaccard_score
 from sklearn.model_selection import KFold
+
+HSVTuple = Tuple[Fraction, Fraction, Fraction]
+RGBTuple = Tuple[float, float, float]
+
+flatten = itertools.chain.from_iterable
 
 
 def load_from_labels_dictionary(
@@ -1142,3 +1150,54 @@ def formatter(format_str, widths, *columns):
         for line in itertools.zip_longest(*lines, fillvalue=""):
             result.append(format_str.format(width=widths, row=line))
     return "\n".join(result)
+
+
+# Functions to generate n random distinct colors
+# https://stackoverflow.com/a/13781114/13223456
+def zenos_dichotomy() -> Iterable[Fraction]:
+    """
+    http://en.wikipedia.org/wiki/1/2_%2B_1/4_%2B_1/8_%2B_1/16_%2B_%C2%B7_%C2%B7_%C2%B7
+    """
+    for k in itertools.count():
+        yield Fraction(1, 2 ** k)
+
+
+def fracs() -> Iterable[Fraction]:
+    yield Fraction(0)
+    for k in zenos_dichotomy():
+        i = k.denominator  # [1,2,4,8,16,...]
+        for j in range(1, i, 2):
+            yield Fraction(j, i)
+
+
+def hue_to_tones(h: Fraction) -> Iterable[HSVTuple]:
+    for s in [Fraction(6, 10)]:  # optionally use range
+        for v in [Fraction(8, 10), Fraction(5, 10)]:  # could use range too
+            yield (h, s, v)  # use bias for v here if you use range
+
+
+def hsv_to_rgb(x: HSVTuple) -> RGBTuple:
+    return colorsys.hsv_to_rgb(*map(float, x))
+
+
+def hsvs() -> Iterable[HSVTuple]:
+    return flatten(map(hue_to_tones, fracs()))
+
+
+def rgbs() -> Iterable[RGBTuple]:
+    return map(hsv_to_rgb, hsvs())
+
+
+def rgb_to_css(x: RGBTuple) -> str:
+    uint8tuple = map(lambda y: int(y * 255), x)
+    return tuple(uint8tuple)
+
+
+def css_colors() -> Iterable[str]:
+    return map(rgb_to_css, rgbs())
+
+
+def random_colors(n: int) -> Tuple[int, int, int]:
+    colors = np.array(list(itertools.islice(css_colors(), n))) / 255.0
+    rgba_colors = [tuple(rgb) + (1,) for rgb in colors]
+    return rgba_colors

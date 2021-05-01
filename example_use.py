@@ -64,6 +64,9 @@ model = TextonEstimator(K=6)  # Define the estimator using 6 clusters
 # Fit the data
 model.fit(X_train, y_train)
 
+# %%
+model.visualize_clusters(sample=5000)
+
 # %% VALIDATE CLASSIFICATION PERFORMANCE
 y_pred_train = model.predict_windows(X_train)
 y_pred_test = model.predict_windows(X_test)
