@@ -147,8 +147,9 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
         self.T_ = cp.zeros((self.classes_.shape[0], self.K, 8), dtype=np.float64)
         self.T_labels_ = np.zeros((self.classes_.shape[0],), dtype=object)
         for i, label in enumerate(self.feature_vectors_):
-            textons = MiniBatchKMeans(
-                n_clusters=self.K, batch_size=2048, random_state=self.random_state_
+            textons = KMeans(
+                n_clusters=self.K,
+                random_state=self.random_state_
             ).fit(self.feature_vectors_[label].get())
 
             # Textons cluster centers

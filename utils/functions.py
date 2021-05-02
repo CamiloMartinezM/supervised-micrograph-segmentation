@@ -10,22 +10,16 @@ import math
 import os
 import pickle
 import random
-import textwrap
 from fractions import Fraction
-from pprint import pprint
 from typing import Iterable, Tuple
 
 import cv2
-import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import pycm
 from numpy.fft import fft2, fftshift
-from openpyxl import load_workbook
 from prettytable import PrettyTable
 from scipy.optimize import curve_fit
-from skimage import color, io
 from sklearn.metrics import jaccard_score
 from sklearn.model_selection import KFold
 
@@ -178,25 +172,7 @@ def train_dev_test_split(
     )
 
 
-def rgb2gray(rgb: np.ndarray) -> np.ndarray:
-    """Converts an image from RGB to gray.
-
-    Args:
-        rgb (np.ndarray): RGB image as a numpy array.
-
-    Returns:
-        np.ndarray: Image in grayscale as a numpy array.
-    """
-    if len(rgb.shape) != 3:
-        return rgb
-    else:  # len(rgb.shape) == 3
-        if rgb.shape[-1] == 4:
-            return color.rgb2gray(color.rgba2rgb(rgb))
-        else:
-            return color.rgb2gray(rgb)
-
-
-def load_img(path: str, as_255: bool = False, with_io: bool = False) -> np.ndarray:
+def load_img(path: str, as_255: bool = False) -> np.ndarray:
     """Loads the image in a numpy.ndarray and converts it to gray scale if possible.
 
     Args:
@@ -205,13 +181,7 @@ def load_img(path: str, as_255: bool = False, with_io: bool = False) -> np.ndarr
     Returns:
         np.ndarray: Image as a numpy array.
     """
-    if with_io:
-        img = io.imread(path)
-    else:
-        img = mpimg.imread(path)
-
-    gray = rgb2gray(img)
-
+    gray = cv2.imread(path, 0)
     if as_255:
         return (np.floor(gray * 255)).astype(np.uint8)
 
@@ -492,99 +462,6 @@ def statistics_from_matrix(matrix: pycm.ConfusionMatrix) -> dict:
         },
         "matrix": matrix,
     }
-
-
-def matrix_to_excel(
-    matrix: np.ndarray,
-    cols: list,
-    sheetname: str,
-    path: str = os.getcwd(),
-    filename: str = "Test",
-) -> None:
-    """Exports a square matrix to an excel file. If a file with the given name already
-    exists, a new sheetname is added and the file is not overwritten.
-
-    Args:
-        matrix (np.ndarray): Data as a matrix.
-        cols (list): Labels of each row and column of the given matrix.
-        sheetname (str): Sheetname.
-        path (str, optional): Specifies where to put the excel file. Defaults to
-                              os.getcwd().
-        filename (str, optional): Excel filename. Defaults to "Test".
-    """
-    filename += ".xlsx"
-    df = pd.DataFrame(matrix, columns=cols)
-    df["Label"] = cols
-    new_cols_arrangement = ["Label"] + cols
-    df = df[new_cols_arrangement]
-
-    if os.path.isfile(os.path.join(path, filename)):
-        book = load_workbook(os.path.join(path, filename))
-        writer = pd.ExcelWriter(os.path.join(path, filename), engine="openpyxl")
-        writer.book = book
-
-        df.to_excel(writer, sheet_name=sheetname)
-        writer.save()
-        writer.close()
-    else:
-        with pd.ExcelWriter(f"{filename}") as writer:
-            df.to_excel(writer, sheet_name=sheetname, index=False)
-
-
-def compare2imgs(
-    img_1: np.ndarray,
-    img_2: np.ndarray,
-    title_1: str = "Original",
-    title_2: str = "Final",
-    dpi=80,
-) -> None:
-    """Shows 2 images side by side.
-
-    Args:
-        img_1 (np.ndarray): Original image loaded as a numpy array.
-        img_2 (np.ndarray): Final image loaded as a numpy array.
-        title_1 (str, optional): Title to put above original image. Defaults to
-                                 "Original".
-        title_2 (str, optional): Title to put above final image. Defaults to "Final".
-    """
-    plt.figure(figsize=(12, 10), dpi=dpi)
-    plt.subplot(1, 2, 1)
-    plt.title("Original")
-    plt.imshow(img_1, cmap="gray")
-    plt.axis("off")
-    plt.subplot(1, 2, 2)
-    plt.title("CLAHE")
-    plt.imshow(img_2, cmap="gray")
-    plt.axis("off")
-    plt.show()
-    plt.close()
-
-
-def fullprint(*args, **kwargs) -> None:
-    """Prints an array without truncation"""
-    opt = np.get_printoptions()
-    np.set_printoptions(threshold=np.inf)
-    pprint(*args, **kwargs)
-    np.set_printoptions(**opt)
-
-
-def nested_dicts_to_matrix(dictionary: dict) -> np.ndarray:
-    """Builds a matrix out of a nested dictionary.
-    Example:
-    >> d = {0: {0: 3, 1: 4}, 1: {0: 0, 1: 5}}
-    >> nested_dicts_to_matrix(d) -> [[3, 4], [0, 5]]
-
-    Args:
-        dictionary (dict): Nested dictionary.
-
-    Returns:
-        np.ndarray: Equivalent matrix.
-    """
-    matrix = []
-    for row in dictionary.values():
-        matrix.append(list(row.values()))
-
-    return np.asarray(matrix)
 
 
 def save_variable_to_file(
@@ -1124,32 +1001,6 @@ def extract_windows_from_filenames(filenames: list, data: dict) -> dict:
                 windows[label].append(window)
 
     return windows
-
-
-def formatter(format_str, widths, *columns):
-    """
-    format_str describes the format of the report.
-    {row[i]} is replaced by data from the ith element of columns.
-
-    widths is expected to be a list of integers.
-    {width[i]} is replaced by the ith element of the list widths.
-
-    All the power of Python's string format spec is available for you to use
-    in format_str. You can use it to define fill characters, alignment, width,
-    type, etc.
-
-    formatter takes an arbitrary number of arguments.
-    Every argument after format_str and widths should be a list of strings.
-    Each list contains the data for one column of the report.
-
-    formatter returns the report as one big string.
-    """
-    result = []
-    for row in zip(*columns):
-        lines = [textwrap.wrap(elt, width=num) for elt, num in zip(row, widths)]
-        for line in itertools.zip_longest(*lines, fillvalue=""):
-            result.append(format_str.format(width=widths, row=line))
-    return "\n".join(result)
 
 
 # Functions to generate n random distinct colors
