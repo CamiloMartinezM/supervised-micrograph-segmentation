@@ -7,6 +7,7 @@ Created on Mon Apr 26 18:31:52 2021
 import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report
 from sklearn.utils.estimator_checks import check_estimator
+import numpy as np
 
 from estimator import TextonEstimator
 from utils.functions import (
@@ -14,6 +15,7 @@ from utils.functions import (
     load_from_labels_dictionary,
     load_variable_from_file,
     randomize_tuple,
+    load_img
 )
 
 # Validate with sklearn
@@ -65,29 +67,36 @@ model = TextonEstimator(K=6)  # Define the estimator using 6 clusters
 model.fit(X_train, y_train)
 
 # %%
-model.visualize_clusters(sample=5000)
+# model.visualize_clusters(sample=5000)
 
 # %% VALIDATE CLASSIFICATION PERFORMANCE
-y_pred_train = model.predict_windows(X_train)
-y_pred_test = model.predict_windows(X_test)
+# y_pred_train = model.predict_windows(X_train)
+# y_pred_test = model.predict_windows(X_test)
 
-target_names = list(label_mapping.keys())
-print("On training:\n")
-print(classification_report(y_train, y_pred_train, target_names=target_names))
+# target_names = list(label_mapping.keys())
+# print("On training:\n")
+# print(classification_report(y_train, y_pred_train, target_names=target_names))
 
-print("On testing:\n")
-print(classification_report(y_test, y_pred_test, target_names=target_names))
+# print("On testing:\n")
+# print(classification_report(y_test, y_pred_test, target_names=target_names))
 
 # %%
 # TODO: VALIDATE SEGMENTATION PERFORMANCE
 
 
 # %% EXAMPLE
-img = imgs[50]
-original_shape = img[-2::].astype(int)
+img = load_img("upscaled_test_image.jpg", with_io=True)
+original_shape = img.shape
+img = np.concatenate([img.ravel(), original_shape])
 
+import time
+tic = time.time()
 segmented_img = model.predict([img])
+toc = time.time()
 
+print(toc - tic, " s")
+
+# %%
 plt.figure()
 plt.imshow(img[:-2].reshape(original_shape), cmap="gray")
 plt.imshow(segmented_img.reshape(original_shape), alpha=0.5)

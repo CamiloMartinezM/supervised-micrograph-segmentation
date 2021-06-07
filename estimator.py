@@ -1,9 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Wed Jan 27 15:22:09 2021
-
-@author: Camilo Martínez
-"""
 import importlib
 import itertools
 from itertools import chain
@@ -28,7 +23,7 @@ if cuml_spec:
     from cuml import KMeans
 else:
     from sklearn.cluster import MiniBatchKMeans as KMeans
-    
+
 # Import tsnecuda it it exists, otherwise check for fitsne, openTSNE, MultiCoreTSNE in that order.
 # If none of those exist, go for sklearn's implementation
 tsnecuda_spec = importlib.util.find_spec(
@@ -147,10 +142,10 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
         self.T_ = cp.zeros((self.classes_.shape[0], self.K, 8), dtype=np.float64)
         self.T_labels_ = np.zeros((self.classes_.shape[0],), dtype=object)
         for i, label in enumerate(self.feature_vectors_):
-            textons = KMeans(
-                n_clusters=self.K,
-                random_state=self.random_state_
-            ).fit(self.feature_vectors_[label].get())
+            # TODO: Cambiar a random_state
+            textons = KMeans(n_clusters=self.K, random_state=0).fit(
+                self.feature_vectors_[label]
+            )
 
             # Textons cluster centers
             self.T_[i] = cp.asarray(textons.cluster_centers_)
@@ -389,8 +384,7 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
         # contains the information of each of the 8 responses.
         for i, battery in enumerate(self.filterbank_):
             response = [
-                fftconvolve(img.get(), np.flip(filt.get()), mode="same")
-                for filt in battery
+                fftconvolve(img, cp.flip(filt), mode="same") for filt in battery
             ]
             result[:, :, i] = cp.max(cp.array(response), axis=0)
 

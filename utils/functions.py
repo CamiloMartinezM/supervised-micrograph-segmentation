@@ -12,6 +12,7 @@ import pickle
 import random
 from fractions import Fraction
 from typing import Iterable, Tuple
+from skimage import io
 
 import cv2
 import matplotlib.pyplot as plt
@@ -172,7 +173,7 @@ def train_dev_test_split(
     )
 
 
-def load_img(path: str, as_255: bool = False) -> np.ndarray:
+def load_img(path: str, as_255: bool = False, with_io: bool = False) -> np.ndarray:
     """Loads the image in a numpy.ndarray and converts it to gray scale if possible.
 
     Args:
@@ -181,9 +182,13 @@ def load_img(path: str, as_255: bool = False) -> np.ndarray:
     Returns:
         np.ndarray: Image as a numpy array.
     """
-    gray = cv2.imread(path, 0)
+    if with_io:
+        gray = io.imread(path, as_gray=True)
+    else:
+        gray = cv2.imread(path, 0) / 255.0
+
     if as_255:
-        return (np.floor(gray * 255)).astype(np.uint8)
+        gray = (np.floor(gray * 255)).astype(np.uint8)
 
     return gray
 
@@ -261,10 +266,18 @@ def print_table_from_dict(
     characteristic_value = list(data.values())[0]
 
     if type(characteristic_value) is np.ndarray:
-        for label in sorted(data.keys(), key=lambda x: data[x].shape[0], reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: data[x].shape[0],
+            reverse=True,
+        ):
             table.add_row([label, f"{data[label].shape}"])
     elif type(characteristic_value) is list:
-        for label in sorted(data.keys(), key=lambda x: len(data[x]), reverse=True,):
+        for label in sorted(
+            data.keys(),
+            key=lambda x: len(data[x]),
+            reverse=True,
+        ):
             table.add_row([label, f"{len(data[label])}"])
     else:  # int
         for label in data.keys():
@@ -531,7 +544,9 @@ def load_variable_from_file(filename: str, src: str) -> object:
 
 
 def jaccard_index_from_ground_truth(
-    segmented: np.ndarray, ground_truth: np.ndarray, classes: np.ndarray,
+    segmented: np.ndarray,
+    ground_truth: np.ndarray,
+    classes: np.ndarray,
 ) -> float:
     """Calculates the Jaccard index of a segmented image with its corresponding ground
     truth image.
@@ -553,7 +568,9 @@ def jaccard_index_from_ground_truth(
 
         try:
             jaccard[key] = jaccard_score(
-                segmented.flatten(), ground_truth.flatten(), average=average_type,
+                segmented.flatten(),
+                ground_truth.flatten(),
+                average=average_type,
             )
         except:
             continue
@@ -942,11 +959,11 @@ def calculate_spacing(
 
 
 def k_folds(dataset: list, k: int) -> tuple:
-    """Yields a tuple, which contains the train and test fold for the k-th validation 
+    """Yields a tuple, which contains the train and test fold for the k-th validation
     in the cross-validation algorithm.
 
     Args:
-        dataset (list): Given dataset. In the context of segmentation, this will be a 
+        dataset (list): Given dataset. In the context of segmentation, this will be a
                         list of images names.
         k (int): Number of folds.
 
@@ -962,12 +979,12 @@ def k_folds(dataset: list, k: int) -> tuple:
 def list_of_names_to_list_of_numpy_arrays(names: list, src: str) -> list:
     """Converts a list of image names to a list of numpy arrays by loading the
     corresponding numpy array to a list.
-    
+
     Args:
         names (list): List of image names.
         src (str): Path of image folder (contains the images to which the names in names
                    correspond).
-    
+
     Returns:
         list: List of tuples of image name and image as a numpy array.
     """
@@ -983,11 +1000,11 @@ def extract_windows_from_filenames(filenames: list, data: dict) -> dict:
     """Extracts a dictionary of windows, where keys are labels and values are labeled
     windows, from a dictionary of all windows (data) and a list of filenames to extract
     the windows of.
-    
+
     Args:
         filenames (list): List of filenames.
         data (dict): Full dictionary of windows.
-        
+
     Returns:
         dict: Dictionary of windows which correspond to the given filenames.
     """
