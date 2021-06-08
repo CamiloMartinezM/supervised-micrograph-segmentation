@@ -2,7 +2,7 @@
 import importlib
 import itertools
 from itertools import chain
-from typing import Optional
+from typing import Optional, List
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -48,17 +48,16 @@ else:
     from sklearn.manifold import TSNE
 
 # Import cupy if it exists, otherwise use numpy as np and cp
+# If cupy exists, import cusignal if it exists. Otherwise use scipy.signal's fftconvolve.
 cupy_spec = importlib.util.find_spec("cupy")
+cusignal_spec = importlib.util.find_spec("cusignal")
 if cupy_spec:
     import cupy as cp
+
+    if cusignal_spec:
+        from cusignal import fftconvolve
 else:
     cp = np
-
-# Import fftconvolve from cusignal if it exists, otherwise import it from scipy.signal
-cusignal_spec = importlib.util.find_spec("cusignal")
-if cusignal_spec:
-    from cusignal import fftconvolve
-else:
     from scipy.signal import fftconvolve
 
 
@@ -102,7 +101,7 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
             raise ValueError("Classifier can't train with n_features = 1")
 
         # Extract labels/classes
-        self.classes_, y = np.unique(y, return_inverse=True)
+        self.classes_, y = cp.unique(y, return_inverse=True)
 
         # Perform simple validations
         if len(self.classes_) == 1:
@@ -171,7 +170,7 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
         # Input validation
         X = check_array(X)
 
-        return np.array([self._segment(x) for x in X], dtype=self.classes_.dtype)
+        return np.array([self._segment(x) for x in X])
 
     def score(self, X, y, sample_weight=None):
         # Calculate predicted label for each x
@@ -259,22 +258,22 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
         # Responses of every pixel in the input image
         responses = self._get_response_vector(X_2d)
 
-        class_matrix = np.zeros(X_2d.shape, dtype=self.classes_.dtype)
+        class_matrix = cp.zeros(X_2d.shape, dtype=self.classes_.dtype)
         for superpixel in superpixels:
             pixels = cp.argwhere(segments == superpixel)
             i = pixels[:, 0]
             j = pixels[:, 1]
             feature_vectors = responses[i, j]
-            class_matrix[i.get(), j.get()] = self._class_of(feature_vectors)
+            class_matrix[i, j] = self._class_of(feature_vectors)
 
         if self.subsegment_class:
             # Check if the class to subsegment is present in the segmentation
             if self.subsegment_class in cp.unique(class_matrix):
                 new_class = cp.max(self.classes_) + 1
-                mapping = {0: self.subsegment_class, 1: new_class}
+                mapping = {0: self.subsegment_class, 1: new_class}  # 0: black, 1:
 
                 subsegmented_X = highlight_class_in_img(
-                    img_to_binary((X_2d * 255).astype(np.uint8)),
+                    cp.asarray(img_to_binary(X_2d)),
                     class_matrix,
                     self.subsegment_class,
                     fill_value=-1,
@@ -283,11 +282,12 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
                 for binary_value, corresponding_class in mapping.items():
                     class_matrix[subsegmented_X == binary_value] = corresponding_class
 
-                np.insert(self.classes_, -1, new_class)
+                cp.append(self.classes_, new_class)
 
-        # The original shape of X is concatenated at the end of the flattened class
-        # matrix
-        return class_matrix.ravel()
+        class_matrix = class_matrix.ravel()
+        if cupy_spec:
+            class_matrix = class_matrix.get()
+        return class_matrix
 
     def _class_of(self, feature_vector: np.ndarray) -> int:
         # Distance matrices.
@@ -303,7 +303,7 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
         )
 
         # Class with maximum probability of occurrence is chosen.
-        return self.classes_[cp.argmax(A, axis=0).get()]
+        return self.classes_[cp.argmax(A, axis=0)]
 
     def _get_closest_texton_vector(self, feature_vectors: np.ndarray) -> np.ndarray:
         """Obtains a vector whose values are the minimum distances of each pixel of a
@@ -410,8 +410,11 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
                   values are the feature vectors of that label.
         """
         feature_vectors = {}
-        for label in np.unique(y):
-            windows = X[y == label]
+        for label in cp.unique(y):
+            idx = y == label
+            if cupy_spec:
+                idx = idx.get()
+            windows = X[idx]
             responses = []
             for x in windows:
                 # x is reshaped to its original shape using the last two values
@@ -424,7 +427,7 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
             # response images. The following operations convert responses_arr to a matrix
             # where each row is a pixel. That means, each row will have 8 columns associated
             # with each pixel responses.
-            feature_vectors[label] = self._concatenate_responses(responses)
+            feature_vectors[label.item()] = self._concatenate_responses(responses)
 
         return feature_vectors
 
@@ -441,6 +444,7 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
                 define scales on which the filters will be computed
             n_orientations : int
                 number of fractions the half-angle will be divided in
+
         Returns:
             edge : ndarray (len(sigmas), n_orientations, 2*radius+1, 2*radius+1)
                 Contains edge filters on different scales and orientations
@@ -500,22 +504,20 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
         return edge, bar, rot
 
     @staticmethod
-    def _concatenate_responses(responses: np.ndarray) -> np.ndarray:
+    def _concatenate_responses(responses: List[np.ndarray]) -> np.ndarray:
         """Helper function to obtain the complete feature vector of a label by concatenating
         all responses of images with the same label, so that a single matrix is obtained in
         which a row corresponds to a single pixel and each pixel possesses 8 dimensions,
         because of the MR8 Filter Bank.
+
         Args:
-            responses (np.ndarray): Numpy array of responses.
+            responses (list): List of numpy arrays, where a numpy array corresponds to the
+                              filter response of a single window.
+
         Returns:
-            np.ndarray: Numpy array of all responses, where a row corresponds to a single
-                        pixel feature vector.
+            np.ndarray: Numpy array of all responses, where a row corresponds to the feature
+                        vector of a single pixel.
         """
         return cp.concatenate(
-            [
-                response[:, i]
-                for response in responses
-                for i in range(response.shape[1])
-                if np.nan not in response[:, i].get()
-            ]
+            [response[~cp.isnan(response).any(axis=-1), :] for response in responses]
         )

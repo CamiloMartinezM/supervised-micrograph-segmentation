@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import classification_report
 from sklearn.utils.estimator_checks import check_estimator
 import numpy as np
+import os
 
 from estimator import TextonEstimator
 from utils.functions import (
@@ -61,7 +62,7 @@ imgs = (
 imgs, gt = flatten_and_append_shape(imgs, gt)
 
 # %% TRAIN THE ESTIMATOR
-model = TextonEstimator(K=6)  # Define the estimator using 6 clusters
+model = TextonEstimator(K=6, subsegment_class=label_mapping["pearlite"])  # Define the estimator using 6 clusters
 
 # Fit the data
 model.fit(X_train, y_train)
@@ -85,16 +86,13 @@ model.fit(X_train, y_train)
 
 
 # %% EXAMPLE
-img = load_img("upscaled_test_image.jpg", with_io=True)
-original_shape = img.shape
-img = np.concatenate([img.ravel(), original_shape])
+# img = load_img(os.path.join("saved_images", "upscaled_test_image.jpg"), with_io=True)
+img = imgs[50]
+# original_shape = img.shape
+# img = np.concatenate([img.ravel(), original_shape])
+original_shape = img[-2::].astype(int)
 
-import time
-tic = time.time()
 segmented_img = model.predict([img])
-toc = time.time()
-
-print(toc - tic, " s")
 
 # %%
 plt.figure()
@@ -102,3 +100,7 @@ plt.imshow(img[:-2].reshape(original_shape), cmap="gray")
 plt.imshow(segmented_img.reshape(original_shape), alpha=0.5)
 plt.show()
 plt.close()
+
+# %%
+print(label_mapping)
+# %%

@@ -590,22 +590,22 @@ def img_to_binary(img: np.ndarray) -> np.ndarray:
     Returns
         np.ndarray: Binary image.
     """
-    img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)  # Image as RGB
-    img[np.all(img == 255, axis=2)] = 0
+    img = cv2.cvtColor(img.astype(np.float32), cv2.COLOR_GRAY2RGB)  # Image as RGB
+    img[np.all(img == 1, axis=2)] = 0
 
     kernel = np.array(
         [[1, 1, 1], [1, -8, 1], [1, 1, 1]], dtype=np.float32
     )  # Laplacian kernel
-    imgLaplacian = cv2.filter2D(img, cv2.CV_64F, kernel)
+    imgLaplacian = cv2.filter2D(img, cv2.CV_32F, kernel)
     imgResult = img - imgLaplacian  # Sharpened image
 
     # Convert back to 8bits gray scale
-    imgResult = np.clip(imgResult, 0, 255)
-    imgResult = imgResult.astype(np.uint8)
+    imgResult = np.clip(imgResult, 0, 1)
+    # imgResult = imgResult.astype(np.uint8)
 
     # Binary image (every pixel is either a 0 or a 1)
     bw = cv2.cvtColor(imgResult, cv2.COLOR_BGR2GRAY)
-    _, bw = cv2.threshold(bw, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    _, bw = cv2.threshold((bw * 255).astype(np.uint8), 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     cv2.normalize(bw, bw, 0, 1.0, cv2.NORM_MINMAX)
 
     return bw
