@@ -50,12 +50,15 @@ else:
 # Import cupy if it exists, otherwise use numpy as np and cp
 # If cupy exists, import cusignal if it exists. Otherwise use scipy.signal's fftconvolve.
 cupy_spec = importlib.util.find_spec("cupy")
+cupy_spec = False
 cusignal_spec = importlib.util.find_spec("cusignal")
 if cupy_spec:
     import cupy as cp
 
     if cusignal_spec:
         from cusignal import fftconvolve
+    else:
+        from scipy.signal import fftconvolve
 else:
     cp = np
     from scipy.signal import fftconvolve
@@ -377,15 +380,20 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
         return s
 
     def _apply_filterbank(self, img: np.ndarray) -> np.ndarray:
-        img = cp.asarray(img).astype(np.float64)
+        if cusignal_spec:
+            img = cp.asarray(img).astype(np.float64)
+
         result = cp.zeros((*img.shape, 8))
         # Every response is stacked on top of the other in a single matrix whose last axis has
         # dimension 8. That means, there is now only one response image, in which each channel
         # contains the information of each of the 8 responses.
         for i, battery in enumerate(self.filterbank_):
-            response = [
-                fftconvolve(img, cp.flip(filt), mode="same") for filt in battery
-            ]
+            response = []
+            for filt in battery:
+                if not cusignal_spec and cupy_spec:
+                    filt = filt.get()
+                
+                response.append(fftconvolve(img, filt, mode="same"))
             result[:, :, i] = cp.max(cp.array(response), axis=0)
 
         return result
@@ -427,7 +435,11 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
             # response images. The following operations convert responses_arr to a matrix
             # where each row is a pixel. That means, each row will have 8 columns associated
             # with each pixel responses.
-            feature_vectors[label.item()] = self._concatenate_responses(responses)
+            concatenated_responses = self._concatenate_responses(responses)
+            if cupy_spec and not cuml_spec:
+                concatenated_responses = concatenated_responses.get()
+                
+            feature_vectors[label.item()] = concatenated_responses
 
         return feature_vectors
 
@@ -501,6 +513,11 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
         edge = edge.reshape(len(sigmas), n_orientations, support, support)
         bar = cp.asarray(bar, dtype=np.float64).reshape(edge.shape)
         rot = cp.asarray(rot, dtype=np.float64)[:, np.newaxis, :, :]
+        
+        # Flip for correlation instead of convolution
+        edge = cp.flip(edge, (2, 3)) 
+        bar = cp.flip(bar, (2, 3))
+        rot = cp.flip(rot, (2, 3))
         return edge, bar, rot
 
     @staticmethod

@@ -62,7 +62,9 @@ imgs = (
 imgs, gt = flatten_and_append_shape(imgs, gt)
 
 # %% TRAIN THE ESTIMATOR
-model = TextonEstimator(K=6, subsegment_class=label_mapping["pearlite"])  # Define the estimator using 6 clusters
+import time
+tic = time.time()
+model = TextonEstimator(K=6)  # Define the estimator using 6 clusters
 
 # Fit the data
 model.fit(X_train, y_train)
@@ -92,7 +94,10 @@ img = imgs[50]
 # img = np.concatenate([img.ravel(), original_shape])
 original_shape = img[-2::].astype(int)
 
+tic1 = time.time()
 segmented_img = model.predict([img])
+toc1 = time.time()
+print(toc1 - tic1)
 
 # %%
 plt.figure()
@@ -100,7 +105,5 @@ plt.imshow(img[:-2].reshape(original_shape), cmap="gray")
 plt.imshow(segmented_img.reshape(original_shape), alpha=0.5)
 plt.show()
 plt.close()
-
-# %%
-print(label_mapping)
-# %%
+toc = time.time()
+print(toc - tic)
