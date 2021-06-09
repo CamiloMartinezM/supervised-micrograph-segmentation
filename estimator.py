@@ -2,7 +2,7 @@
 import importlib
 import itertools
 from itertools import chain
-from typing import Optional, List
+from typing import List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -50,7 +50,6 @@ else:
 # Import cupy if it exists, otherwise use numpy as np and cp
 # If cupy exists, import cusignal if it exists. Otherwise use scipy.signal's fftconvolve.
 cupy_spec = importlib.util.find_spec("cupy")
-cupy_spec = False
 cusignal_spec = importlib.util.find_spec("cusignal")
 if cupy_spec:
     import cupy as cp
@@ -392,7 +391,7 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
             for filt in battery:
                 if not cusignal_spec and cupy_spec:
                     filt = filt.get()
-                
+
                 response.append(fftconvolve(img, filt, mode="same"))
             result[:, :, i] = cp.max(cp.array(response), axis=0)
 
@@ -438,7 +437,7 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
             concatenated_responses = self._concatenate_responses(responses)
             if cupy_spec and not cuml_spec:
                 concatenated_responses = concatenated_responses.get()
-                
+
             feature_vectors[label.item()] = concatenated_responses
 
         return feature_vectors
@@ -513,9 +512,9 @@ class TextonEstimator(BaseEstimator, ClassifierMixin):
         edge = edge.reshape(len(sigmas), n_orientations, support, support)
         bar = cp.asarray(bar, dtype=np.float64).reshape(edge.shape)
         rot = cp.asarray(rot, dtype=np.float64)[:, np.newaxis, :, :]
-        
+
         # Flip for correlation instead of convolution
-        edge = cp.flip(edge, (2, 3)) 
+        edge = cp.flip(edge, (2, 3))
         bar = cp.flip(bar, (2, 3))
         rot = cp.flip(rot, (2, 3))
         return edge, bar, rot
