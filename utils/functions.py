@@ -1069,3 +1069,15 @@ def random_colors(n: int) -> Tuple[int, int, int]:
     colors = np.array(list(itertools.islice(css_colors(), n))) / 255.0
     rgba_colors = [tuple(rgb) + (1,) for rgb in colors]
     return rgba_colors
+
+def absolute_file_paths(directory: str) -> list:
+    """ Returns list of files inside directory, with their respective full path.
+    
+    Args:
+        directory (str): Directory to scan files.
+
+    Returns
+        list: List of files inside directory including full path of the file.
+    """
+    path = os.path.abspath(directory)
+    return [entry.path for entry in os.scandir(path) if entry.is_file()]
