@@ -90,6 +90,8 @@ model.fit(X_train, y_train)
 # %% EXAMPLE
 # img = load_img(os.path.join("saved_images", "upscaled_test_image.jpg"), with_io=True)
 img = imgs[50]
+
+print(img.shape)
 # original_shape = img.shape
 # img = np.concatenate([img.ravel(), original_shape])
 original_shape = img[-2::].astype(int)

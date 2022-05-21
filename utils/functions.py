@@ -23,6 +23,9 @@ from prettytable import PrettyTable
 from scipy.optimize import curve_fit
 from sklearn.metrics import jaccard_score
 from sklearn.model_selection import KFold
+import matplotlib as mpl
+from skimage.segmentation import mark_boundaries
+
 
 HSVTuple = Tuple[Fraction, Fraction, Fraction]
 RGBTuple = Tuple[float, float, float]
@@ -266,18 +269,10 @@ def print_table_from_dict(
     characteristic_value = list(data.values())[0]
 
     if type(characteristic_value) is np.ndarray:
-        for label in sorted(
-            data.keys(),
-            key=lambda x: data[x].shape[0],
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: data[x].shape[0], reverse=True,):
             table.add_row([label, f"{data[label].shape}"])
     elif type(characteristic_value) is list:
-        for label in sorted(
-            data.keys(),
-            key=lambda x: len(data[x]),
-            reverse=True,
-        ):
+        for label in sorted(data.keys(), key=lambda x: len(data[x]), reverse=True,):
             table.add_row([label, f"{len(data[label])}"])
     else:  # int
         for label in data.keys():
@@ -544,9 +539,7 @@ def load_variable_from_file(filename: str, src: str) -> object:
 
 
 def jaccard_index_from_ground_truth(
-    segmented: np.ndarray,
-    ground_truth: np.ndarray,
-    classes: np.ndarray,
+    segmented: np.ndarray, ground_truth: np.ndarray, classes: np.ndarray,
 ) -> float:
     """Calculates the Jaccard index of a segmented image with its corresponding ground
     truth image.
@@ -568,9 +561,7 @@ def jaccard_index_from_ground_truth(
 
         try:
             jaccard[key] = jaccard_score(
-                segmented.flatten(),
-                ground_truth.flatten(),
-                average=average_type,
+                segmented.flatten(), ground_truth.flatten(), average=average_type,
             )
         except:
             continue
@@ -605,7 +596,9 @@ def img_to_binary(img: np.ndarray) -> np.ndarray:
 
     # Binary image (every pixel is either a 0 or a 1)
     bw = cv2.cvtColor(imgResult, cv2.COLOR_BGR2GRAY)
-    _, bw = cv2.threshold((bw * 255).astype(np.uint8), 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    _, bw = cv2.threshold(
+        (bw * 255).astype(np.uint8), 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU
+    )
     cv2.normalize(bw, bw, 0, 1.0, cv2.NORM_MINMAX)
 
     return bw
@@ -1020,6 +1013,79 @@ def extract_windows_from_filenames(filenames: list, data: dict) -> dict:
     return windows
 
 
+def visualize_segmentation(
+    original_img: np.ndarray,
+    classes: np.ndarray,
+    segments: np.ndarray,
+    dpi: int = 120,
+    save_png: bool = False,
+    png_name: str = "segmentation.png",
+) -> None:
+    """Plots a segmentation result on top of the original image.
+    Args:
+        original_img (np.ndarray): Numpy array associated with the original image.
+        classes (np.ndarray): Array of classes/labels.
+        segments (np.ndarray): Class matrix; segmented array where each value
+                               corresponds to a class/label.
+        dpi (int, optional): DPI for plotted figure. Defaults to 120.
+    """
+    present_classes = np.unique(segments).tolist()
+    C_p = len(present_classes)
+
+    colour_names = [
+        "blue",
+        "red",
+        "yellow",
+        "orange",
+        "black",
+        "purple",
+        "green",
+        "turquoise",
+        "grey",
+        "maroon",
+        "silver",
+    ]
+    colour_dict = {
+        class_: mpl.colors.to_rgb(colour_names[i])
+        for i, class_ in enumerate(present_classes)
+    }
+
+    k = np.array(list(colour_dict.keys()))
+    v = np.array(list(colour_dict.values()))
+
+    mapping_ar = np.zeros((k.max() + 1, 3), dtype=v.dtype)
+    mapping_ar[k] = v
+    overlay = mapping_ar[segments]
+
+    present_colours = [colour_dict[present_class] for present_class in present_classes]
+    colours = mpl.colors.ListedColormap(present_colours)
+
+    norm = mpl.colors.BoundaryNorm(np.arange(C_p + 1) - 0.5, C_p)
+
+    plt.figure(figsize=(10, 8), dpi=dpi)
+    plt.imshow(mark_boundaries(original_img, segments), cmap="gray")
+    plt.imshow(overlay, cmap=colours, norm=norm, alpha=0.6)
+    cb = plt.colorbar(ticks=np.arange(C_p))
+    print(np.arange(C_p))
+
+    # labels = list(classes[min(present_classes) : max(present_classes) + 1]).copy()
+    labels = [classes[i] for i in present_classes]
+    
+    if "ferrite" in labels:
+        labels[labels.index("pearlite")] = "cementite"
+
+    cb.ax.set_yticklabels(labels)
+
+    plt.tight_layout(w_pad=100)
+    plt.axis("off")
+    if save_png:
+        if not png_name.endswith(".png"):
+            png_name += ".png"
+
+        plt.savefig(png_name, bbox_inches=0, dpi=dpi)
+    plt.pause(0.05)
+
+
 # Functions to generate n random distinct colors
 # https://stackoverflow.com/a/13781114/13223456
 def zenos_dichotomy() -> Iterable[Fraction]:
@@ -1069,6 +1135,7 @@ def random_colors(n: int) -> Tuple[int, int, int]:
     colors = np.array(list(itertools.islice(css_colors(), n))) / 255.0
     rgba_colors = [tuple(rgb) + (1,) for rgb in colors]
     return rgba_colors
+
 
 def absolute_file_paths(directory: str) -> list:
     """ Returns list of files inside directory, with their respective full path.
