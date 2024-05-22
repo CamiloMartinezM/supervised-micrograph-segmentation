@@ -2,7 +2,7 @@
 
 **Version 1.0.0**
 
-This repository holds the code and final model for the bachelor thesis titled "Application of Computer Vision in the Analysis of Microstructures and Obtaining Structure-Property Relations" (2021). This code requires Python 3.6 or newer.
+This repository holds the code and final model for the bachelor thesis titled "[Application of Computer Vision in the Analysis of Microstructures and Obtaining Structure-Property Relations](https://repositorio.uniandes.edu.co/entities/publication/60ccf854-b041-441b-b7f7-8a79662c4bc1)" (2021). This code requires Python 3.6 or newer.
 
 # Project structure
 - `model.py` does the "heavylifting", from the loading and pre-processing of images to the training and testing of a segmentation model and the post-processing of segmented micrographs (which include the estimation of the mean apparent interlaminar spacing of pearlite and the mechanical properties, based on that value and the volume fractions of the steel phases and morphologies present).
