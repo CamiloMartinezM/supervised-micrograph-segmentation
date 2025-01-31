@@ -27,6 +27,9 @@ The console (`app.py`) includes an option to create a brand-new model for segmen
 ### Flow diagram
 ![Model selection tool](final_model/model_selection.png "Flow diagram of the model selection tool")
 
+# Notes
+* `saved_variables/ground_truth.pickle` and `ground_truth_with_originals.pickle` were deleted because of space.
+  
 # License & copyright
 © Camilo Martínez M., <ca.martinezm2@uniandes.edu.co>
 
