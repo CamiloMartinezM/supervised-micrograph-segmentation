@@ -1,5 +1,9 @@
 # Supervised Superpixel-Texton Approach for Micrograph Segmentation
 
+![Method overview: micrographs and annotation, texton learning, superpixel-texton segmentation, and post-processing into phase fractions, pearlite spacing and strength, with model selection as a side loop](docs/pipeline-overview/pipeline-overview.png)
+
+**Method overview.** (1) 51 optical micrographs of hypoeutectoid steels are preprocessed and annotated with windows of pearlite and proeutectoid ferrite (PF). (2) The MR8 filter responses of the annotated pixels are clustered per class into K textons. (3) A new micrograph is cut into superpixels: every pixel votes for the class of its nearest texton, each superpixel takes the majority class, and pearlite is then split into ferrite and cementite. (4) The segmentation gives phase fractions, the pearlite interlamellar spacing from the 2-D DFT spectrum, and yield and tensile strength from structure–property relations. A side loop (orange) chooses K and the Felzenszwalb superpixel parameters by 3-fold cross-validation on the micro-averaged Jaccard index. The thumbnails are outputs of this code; [docs/pipeline-overview](docs/pipeline-overview) rebuilds the figure.
+
 **Version 1.0.0**
 
 This repository holds the code and final model for the bachelor thesis titled "[Application of Computer Vision in the Analysis of Microstructures and Obtaining Structure-Property Relations](https://repositorio.uniandes.edu.co/entities/publication/60ccf854-b041-441b-b7f7-8a79662c4bc1)" (2021). This code requires Python 3.6 or newer.

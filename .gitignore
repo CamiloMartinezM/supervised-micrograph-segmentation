@@ -144,3 +144,7 @@ Micrografías a anotar/
 
 # Local reference material (TikZ book, LaTeX samples), not part of the project
 docs/libraries/
+
+# Rebuilt by docs/pipeline-overview/make_assets.py and tectonic
+docs/pipeline-overview/assets/
+docs/pipeline-overview/pipeline-overview.pdf

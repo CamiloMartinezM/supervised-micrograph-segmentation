@@ -1,0 +1,288 @@
+% Method overview of the supervised superpixel-texton micrograph segmentation model.
+% The thumbnails and data in assets/ come from make_assets.py; see README.md.
+\documentclass[tikz,border=3pt]{standalone}
+\usepackage{amsmath}
+\usepackage{unicode-math}
+\setmainfont{texgyrepagella}[Extension=.otf, UprightFont=*-regular, BoldFont=*-bold,
+  ItalicFont=*-italic, BoldItalicFont=*-bolditalic]
+\setmathfont{texgyrepagella-math.otf}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta,calc,decorations.pathreplacing,shapes.geometric}
+
+\input{assets/numbers.tex}
+
+\definecolor{smInk}{HTML}{2F3440}
+\definecolor{smMuted}{HTML}{67707E}
+\definecolor{smLine}{HTML}{CDD3DD}
+\definecolor{smCard}{HTML}{F8F9FB}
+\definecolor{smTeal}{HTML}{3F8C8C}
+\definecolor{smPurple}{HTML}{93658F}
+\definecolor{smOrange}{HTML}{D8832E}
+\definecolor{smGreen}{HTML}{4D8B57}
+\definecolor{smSlate}{HTML}{4F6178}
+% Phase colours of the segmentation overlays (COLOURS in make_assets.py).
+\definecolor{phPF}{RGB}{52,101,214}
+\definecolor{phPearlite}{RGB}{214,69,65}
+\definecolor{phFerrite}{RGB}{242,201,46}
+
+\newcommand{\fTitle}{\fontsize{10.5}{12.5}\selectfont\bfseries}
+\newcommand{\fSub}{\fontsize{7.6}{9}\selectfont}
+\newcommand{\fLab}{\fontsize{7.2}{8.6}\selectfont}
+\newcommand{\fNote}{\fontsize{6.5}{7.8}\selectfont}
+\newcommand{\swatch}[1]{\textcolor{#1}{\rule[-0.12ex]{0.85em}{0.85em}}}
+\newcommand{\img}[2]{\includegraphics[width=#1]{assets/#2}}
+\newcommand{\PF}{\mathrm{PF}}
+\hyphenpenalty=10000 \exhyphenpenalty=10000 % no hyphenated labels
+\newcommand{\sep}{\ $\cdot$\ }
+\newcommand{\um}{\,\textmu m}
+
+\begin{document}
+\begin{tikzpicture}[
+  >={Stealth[round,length=1.9mm]},
+  card/.style={draw=smLine, fill=smCard, rounded corners=6pt, line width=0.7pt},
+  badge/.style={circle, minimum size=0.44cm, inner sep=0pt, font=\bfseries\fontsize{7.5}{8}\selectfont, text=white},
+  title/.style={font=\fTitle, text=smInk, anchor=base west, inner sep=0pt},
+  sub/.style={font=\fSub, text=smMuted, anchor=base west, inner sep=0pt},
+  lab/.style={font=\fLab, text=smInk, align=center, inner sep=1pt},
+  note/.style={font=\fNote, text=smMuted, align=center, inner sep=1pt},
+  frame/.style={inner sep=0pt, draw=smInk!45, line width=0.4pt},
+  flow/.style={->, draw=smInk!60, line width=0.9pt, line cap=round, shorten >=1.5pt, shorten <=1.5pt},
+  tag/.style={font=\bfseries\fontsize{6.2}{7}\selectfont, text=white, fill=#1, rounded corners=1.6pt, inner sep=1.5pt},
+]
+
+% ---------------------------------------------------------------- cards
+% Top row: y 6.55-12.95; bottom row: y 0-6.4. The gap at y 6.475 carries the textons.
+\draw[card] (0,6.55) rectangle (6.35,12.95);
+\draw[card] (6.5,6.55) rectangle (14.6,12.95);
+\draw[card] (14.75,6.55) rectangle (21.4,12.95);
+\draw[card] (0,0) rectangle (14.0,6.4);
+\draw[card] (14.15,0) rectangle (21.4,6.4);
+
+% Stages are numbered in data-flow order. Model selection is a side loop that tunes the
+% hyperparameters, so its badge shows a loop instead of a number.
+\foreach \x/\y/\col/\n/\t/\s in {
+  0/12.95/smTeal/1/{Micrographs \& annotation}/{51 optical micrographs of hypoeutectoid steels},
+  6.5/12.95/smPurple/2/{Texton learning}/{MR8 responses of the annotated pixels, clustered per class},
+  14.75/12.95/smOrange/{}/{Model selection \& evaluation}/{Hyperparameters tuned for segmentation quality},
+  0/6.4/smGreen/3/{Superpixel--texton segmentation}/{Unseen test micrograph},
+  14.15/6.4/smSlate/4/{Microstructure $\rightarrow$ properties}/{Post-processing of the segmentation}} {
+  \node[badge, fill=\col] (badge) at (\x+0.38,\y-0.40) {\n};
+  \node[title] at ($(badge.east)+(0.12,-0.13)$) {\t};
+  \node[sub] at (\x+0.26,\y-0.88) {\s};
+}
+\draw[white, line width=0.85pt, -{Stealth[length=1.25mm, width=1.6mm]}]
+  ([shift={(60:0.11)}]15.13,12.55) arc[start angle=60, end angle=-235, radius=0.11];
+
+% ---------------------------------------------------------------- 1: data
+\node[frame, anchor=north west] (raw) at (0.26,11.75) {\img{2.3cm}{raw.jpg}};
+\node[frame, anchor=north east] (crop) at (6.09,11.75) {\img{1.73cm}{crop.png}};
+\draw[flow] (raw.east) -- node[note, above=1pt] {preprocess} (crop.west);
+\node[note, anchor=north] at (raw.south) {raw micrograph (\textcopyright\,ASM)};
+\node[note, anchor=north] at (crop.south) {500\,$\times$\,500 input};
+\node[note, anchor=north west, text width=5.85cm, align=left] at (0.24,9.68)
+  {Bottom 10\,\% (scale band) cut off and its scale bar measured in px\sep centred
+   500\,$\times$\,500 crop\sep CLAHE};
+
+\node[frame, anchor=north west] (train) at (0.26,9.0) {\img{2.1cm}{train.png}};
+\begin{scope}[shift={(train.south west)}, x=2.1cm, y=2.1cm]
+  \foreach \xa/\ya/\xb/\yb/\k in \smTrainWindows {
+    \ifnum\k=0 \def\col{phPF}\else\def\col{phPearlite}\fi
+    \draw[\col, line width=0.55pt] (\xa,\ya) rectangle (\xb,\yb);
+  }
+\end{scope}
+\node[lab, anchor=north west, align=left] at (2.55,9.02) {%
+  \textbf{Annotated windows}\\{\fNote\color{smMuted}ImageJ + Alp's Labeling Tool}\\[2pt]
+  \swatch{phPearlite}\ pearlite: 148\\
+  \swatch{phPF}\ proeutectoid ferrite (PF): 99\\[2pt]
+  {\fNote\color{smMuted}Ground truth: Weka + MorphoLibJ}\\
+  {\fNote\color{smMuted}Split: 30 train\sep 10 dev\sep 11 test}};
+
+% ---------------------------------------------------------------- 2: textons
+\begin{scope}[yshift=0.12cm]
+\foreach \k/\name/\y/\lbl in {pf/PF/10.6/PF windows, p/P/8.2/pearlite windows} {
+  \foreach \i/\dd in {3/0.2, 2/0.1, 1/0} {
+    \node[frame] at ($(7.3,\y)+(\dd,\dd)$) {\img{0.95cm}{win_\k\i.png}};
+  }
+  \node[note, anchor=north] at (7.4,\y-0.52) {\lbl};
+  \coordinate (win\name) at (7.97,\y+0.1);
+}
+\draw[flow] (6.12,8.2) -- (6.8,8.2);
+\node[frame] (bank) at (9.6,9.4) {\includegraphics[height=2.45cm]{assets/filters.png}};
+\node[lab, anchor=south] at (bank.north) {\textbf{MR8 filter bank}};
+\node[note, anchor=north, text width=2.5cm] at (bank.south)
+  {38 RFS filters; the max over 6 orientations gives 8 responses per pixel};
+\draw[flow] (winPF) to[out=0, in=160] ($(bank.west)+(0,0.45)$);
+\draw[flow] (winP) to[out=0, in=200] ($(bank.west)+(0,-0.45)$);
+
+\foreach \name/\col/\y in {PF/phPF/10.07, P/phPearlite/8.57} {
+  \draw[\col, fill=\col!10, line width=0.6pt] (11.1,\y-0.5) rectangle (11.52,\y+0.5);
+  \foreach \cc in {1,...,7} \draw[\col!45, line width=0.25pt] (11.1+\cc*0.0525,\y-0.5) -- ++(0,1.0);
+  \node[lab, anchor=south] at (11.31,\y+0.5) {$\mathbf{F}_{\mathrm{\name}}$};
+  \draw[flow] (bank.east) to[out=0, in=180] (11.1,\y);
+  \coordinate (feat\name) at (11.52,\y);
+}
+\node[note, anchor=north] at (11.31,8.02) {$N_c\times 8$};
+
+% pgfplots in this TeX bundle ignores unitless at={(x,y)}; give the units.
+\begin{axis}[at={(12.15cm,7.95cm)}, anchor=south west, scale only axis, width=2.2cm, height=2.35cm,
+  axis line style={smLine}, ticks=none, enlargelimits=0.06, clip=false]
+  \addplot[only marks, mark=*, mark size=0.32pt, phPF, opacity=0.5,
+    restrict expr to domain={\thisrow{c}}{0:0}] table[x=x, y=y] {assets/textons.dat};
+  \addplot[only marks, mark=*, mark size=0.32pt, phPearlite, opacity=0.5,
+    restrict expr to domain={\thisrow{c}}{1:1}] table[x=x, y=y] {assets/textons.dat};
+  \addplot[only marks, mark=diamond*, mark size=1.7pt, mark options={draw=smInk, fill=phPF},
+    restrict expr to domain={\thisrow{c}}{0:0}] table[x=x, y=y] {assets/centres.dat};
+  \addplot[only marks, mark=diamond*, mark size=1.7pt, mark options={draw=smInk, fill=phPearlite},
+    restrict expr to domain={\thisrow{c}}{1:1}] table[x=x, y=y] {assets/centres.dat};
+\end{axis}
+\node[lab, anchor=south] at (13.25,10.35) {\textbf{K-means per class}};
+\node[tag=smOrange, anchor=north west] at (12.22,10.23) {$K=9$};
+\draw[flow] (featPF) to[out=0, in=170] (12.12,9.4);
+\draw[flow] (featP) to[out=0, in=190] (12.12,9.0);
+\node[note, anchor=north] (tlabel) at (13.25,7.92)
+  {\raisebox{0.2ex}{\rotatebox{45}{\rule{0.42em}{0.42em}}}\ textons $\mathbf{T}\in\mathbb{R}^{C\times K\times 8}$\\(2-D PCA view)};
+\end{scope}
+
+% ---------------------------------------------------------------- model selection (side loop)
+% Each block hangs below the previous one, so text reflows without overlaps.
+\begin{scope}[every node/.style={font=\fLab, text=smInk, anchor=north west, align=left, inner sep=0pt,
+    text width=5.6cm}]
+  \node (s1) at (15.5,11.82) {Window F1-score over $K$ $\rightarrow$ start at $K=6$};
+  \node (s2) at ([yshift=-0.16cm]s1.south west) {Felzenszwalb sweeps at $K=6$ bound the grid};
+  \node (s3) at ([yshift=-0.16cm]s2.south west)
+    {3-fold cross-validation on train\,+\,dev\\(40 images), scored by micro-avg.\ Jaccard};
+  \node[font=\fNote, text=smMuted, text width=5.75cm] (grid) at ([yshift=-0.1cm]s3.south west)
+    {$K\in\{6,\dots,10\}$, $\sigma\in\{0.8,1.0,1.2,1.4\}$,\\
+     scale $\in\{75,100,125\}$, min\_size $\in\{85,100,115,125\}$:\\
+     240 settings $\times$ 3 folds = 720 fits};
+\end{scope}
+\foreach \s/\n in {s1/i, s2/ii, s3/iii}
+  \node[tag=smOrange!80, anchor=north west, yshift=0.01cm] at (15.0,0 |- \s.north) {\n};
+\path (18.07,0 |- grid.south) ++(0,-0.2) node[draw=smOrange, fill=smOrange!10, rounded corners=3pt,
+  line width=0.7pt, font=\fontsize{6.9}{8}\selectfont, text=smInk, inner sep=3pt, anchor=north] (chosen)
+  {\textbf{Selected:} $K=9$\sep scale $=125$\sep $\sigma=0.8$\sep min\_size $=115$};
+\path (chosen.south) ++(0,-0.14) node[font=\fLab, text=smInk, anchor=north] (results) {%
+  \setlength{\tabcolsep}{4pt}\renewcommand{\arraystretch}{1.05}%
+  \begin{tabular}{@{}lccc@{}}
+    & Train & Dev & \textbf{Test}\\\hline
+    Window F1 (classification) & 0.917 & 0.903 & \textbf{0.909}\\
+    Pixel accuracy & 0.892 & 0.888 & \textbf{0.853}\\
+    Micro-avg.\ Jaccard & 0.811 & 0.808 & \textbf{0.757}
+  \end{tabular}};
+\path (results.south) ++(0,-0.1) node[note, anchor=north]
+  {2 ASM tensile strengths predicted within 5.2\,\% and 7.8\,\%};
+
+% ---------------------------------------------------------------- 3: segmentation
+\def\th{1.85cm}
+\node[frame] (test) at (1.12,2.85) {\img{\th}{test.png}};
+\node[note, anchor=north] at (test.south) {test micrograph};
+
+\foreach \i/\dd in {8/0.2, 4/0.1, 1/0} {
+  \node[frame] at ($(3.55,4.1)+(\dd,\dd)$) {\img{1.62cm}{resp\i.png}};
+}
+\coordinate (respW) at (2.74,4.1);
+\coordinate (respE) at (4.56,4.2);
+\node[note, anchor=north] at (3.65,3.27) {8 MR8 responses};
+
+\node[frame] (sp) at (3.55,1.45) {\img{\th}{superpixels.png}};
+\node[note, anchor=north west] (spname) at (4.62,1.12)
+  {\textbf{\color{smInk}Felzenszwalb superpixels} (\smSuperpixels)};
+\node[note, anchor=north west] (spparams) at (spname.south west) {(scale, $\sigma$, min\_size) =};
+\node[tag=smOrange, anchor=west] at (spparams.east) {125, 0.8, 115};
+
+\node[frame] (votes) at (5.9,4.2) {\img{\th}{votes.png}};
+\node[note, anchor=north, text width=2.3cm] at (votes.south) {each pixel votes for the class of its nearest texton};
+\begin{scope}[shift={(votes.south west)}, x=\th, y=\th]
+  \draw[white, line width=0.6pt] (\smZoomX-\smZoomSize/2,\smZoomY-\smZoomSize/2) rectangle ++(\smZoomSize,\smZoomSize);
+  \coordinate (zoomNE) at (\smZoomX+\smZoomSize/2,\smZoomY+\smZoomSize/2);
+  \coordinate (zoomSE) at (\smZoomX+\smZoomSize/2,\smZoomY-\smZoomSize/2);
+\end{scope}
+\node[frame, anchor=south west] (inset) at (7.3,4.05) {\img{1.2cm}{votes_zoom.png}};
+\draw[white!55!smInk, line width=0.4pt] (zoomNE) -- (inset.north west) (zoomSE) -- (inset.south west);
+\node[note, anchor=west, align=left] at (inset.east) {superpixel $S$:\\\smVotePearlite\,\% of \smVotePixels\ px\\vote pearlite};
+
+\node[frame] (two) at (8.45,2.85) {\img{\th}{twoclass.png}};
+\node[note, anchor=north] at (two.south) {majority vote\\per superpixel};
+\node[draw=smGreen, fill=white, rounded corners=3pt, line width=0.6pt, font=\fNote, text=smInk,
+  align=center, inner sep=3pt, anchor=north east] at (13.85,5.28)
+  {\textbf{Collective decision}\\[1pt]
+   $\hat c(S)=\arg\max_c \sum_{p\in S}\mathbf{1}\bigl[c^{*}_p=c\bigr]$\\[1pt]
+   {\color{smMuted}$c^{*}_p$: class of the texton nearest $\mathbf{x}_p$}};
+
+\node[frame] (bin) at (10.72,2.85) {\img{\th}{binary.png}};
+\node[note, anchor=north] at (bin.south) {pearlite split:\\Laplacian sharpening\\+ Otsu threshold};
+
+\node[frame] (final) at (12.95,2.85) {\img{\th}{final.png}};
+\node[note, anchor=north, align=left] at (final.south)
+  {\swatch{phPF}\ PF\quad\swatch{phFerrite}\ ferrite\\\swatch{phPearlite}\ cementite};
+
+\draw[flow] (test.east) to[out=0, in=180] (respW);
+\draw[flow] (test.east) to[out=0, in=180] (sp.west);
+\draw[flow] (respE) -- (votes.west);
+\draw[flow] (votes.east) to[out=0, in=180] ($(two.west)+(0,0.4)$);
+\draw[flow] (sp.east) to[out=0, in=180] ($(two.west)+(0,-0.4)$);
+\draw[flow] (two.east) -- (bin.west);
+\draw[flow] (bin.east) -- (final.west);
+
+% Textons from stage 2 drive the pixel votes.
+% It drops at x = 6.4, right of the stage-3 title.
+\draw[flow, draw=smPurple, rounded corners=5pt] (tlabel.south) -- (tlabel.south |- 0,6.475) --
+  node[pos=0.5, fill=smPurple, draw=smPurple, rounded corners=1.5pt, inner xsep=4.5pt, inner ysep=1.3pt,
+    font=\fNote, text=white] {Learned textons $\mathbf{T}$} (6.4,6.475) -- (votes.north -| 6.4,0);
+
+% ---------------------------------------------------------------- 4: properties
+\node[lab, anchor=base west] at (14.4,5.18) {\textbf{Area fractions} {\fNote\color{smMuted}(pixel counts)}};
+\pgfmathsetmacro{\wPF}{4.6*\smFracPF/100}
+\pgfmathsetmacro{\wFe}{4.6*\smFracFerrite/100}
+\pgfmathsetmacro{\wCe}{4.6*\smFracCementite/100}
+\begin{scope}[shift={(14.45,4.6)}]
+  \fill[phPF] (0,0) rectangle (\wPF,0.36);
+  \fill[phFerrite] (\wPF,0) rectangle ({\wPF+\wFe},0.36);
+  \fill[phPearlite] ({\wPF+\wFe},0) rectangle ({\wPF+\wFe+\wCe},0.36);
+  \node[font=\fNote, text=white] at ({\wPF/2},0.18) {PF \smFracPF\,\%};
+  \node[font=\fNote, text=smInk] at ({\wPF+\wFe/2},0.18) {\smFracFerrite\,\%};
+  \node[font=\fNote, text=white] at ({\wPF+\wFe+\wCe/2},0.18) {\smFracCementite\,\%};
+  \draw[decorate, decoration={brace, mirror, amplitude=3pt}, smMuted, line width=0.5pt]
+    (\wPF,-0.05) -- ({\wPF+\wFe+\wCe},-0.05) node[midway, below=2pt, font=\fNote, text=smMuted]
+    {pearlite \smFracPearlite\,\% = ferrite + cementite};
+\end{scope}
+\node[note, anchor=west, align=left] at (19.2,4.78) {with the scale bar\\$\rightarrow$ areas in\um$^2$};
+
+\node[lab, anchor=base west] at (14.4,3.82) {\textbf{Interlamellar spacing} {\fNote\color{smMuted}(spectral analysis, Matteis 2020)}};
+\node[frame] (cem) at (15.05,3.02) {\img{1.15cm}{cementite.png}};
+\node[frame] (dft) at (16.62,3.02) {\img{1.15cm}{dft.png}};
+\node[note, anchor=north] at (cem.south) {cementite};
+\node[note, anchor=north] at (dft.south) {$\log|\mathrm{DFT}|$};
+\draw[flow] (cem.east) -- (dft.west);
+\begin{axis}[at={(17.72cm,2.6cm)}, anchor=south west, scale only axis, width=2.75cm, height=0.93cm,
+  xmin=0, xmax=0.7, ymin=-0.15, ymax=1.3, axis lines=left, axis line style={smInk!55},
+  ytick=\empty, xtick={0,0.2,0.4,0.6}, tick style={smInk!55}, tick label style={font=\fNote, text=smMuted},
+  clip=false]
+  \node[font=\fNote, text=smMuted, anchor=south east, inner sep=1pt] at (axis cs:0.7,0.1) {$w$ [px$^{-1}$]};
+  \addplot[smInk!75, line width=0.35pt] table[x=w, y=F] {assets/spectrum.dat};
+  \pgfmathsetmacro{\lo}{\smPeak-\smFWHM/2}
+  \pgfmathsetmacro{\hi}{\smPeak+\smFWHM/2}
+  \addplot[phPearlite, line width=0.9pt, domain=\lo:\hi, samples=40] {exp(-((x-\smPeak)/\smFitWidth)^2)};
+  \draw[smPurple, densely dashed, line width=0.6pt] (axis cs:\smPeak,-0.15) -- (axis cs:\smPeak,1.3)
+    node[above, font=\fNote, text=smPurple, inner sep=1pt] {$w^{*}$};
+\end{axis}
+\draw[flow] (dft.east) -- (17.68,3.02);
+\node[note, anchor=base west] at (14.42,1.94)
+  {$\lambda = 1/w^{*} = \smSpacingOne$\,px (peak), \smSpacingTwo\,px (weighted mean) $\rightarrow$\um};
+
+\node[lab, anchor=base west] at (14.4,1.56)
+  {\textbf{Strength} $\sigma_y$, $\sigma_u$ {\fNote\color{smMuted}(structure--property relations, Kuziak et al.\ 1997)}};
+\node[draw=smSlate, fill=white, diamond, aspect=2.1, inner sep=0.5pt, font=\fNote, text=smInk, line width=0.5pt]
+  (rule) at (15.1,0.76) {$f_{\PF}\le 10\,\%$};
+\node[note, anchor=west, align=left] (yes) at (16.5,1.13)
+  {yes, pearlitic: $\sigma_y,\sigma_u = f(\lambda,\%\mathrm{C},\%\mathrm{Si})$};
+\node[note, anchor=west, align=left, text=smInk] (no) at (16.5,0.4)
+  {no (this image), plain-carbon:\\$\sigma_y,\sigma_u = f(f_{\PF},\lambda,D_\alpha,\%\mathrm{Mn},\%\mathrm{N},\%\mathrm{P},\%\mathrm{Si})$};
+\draw[flow, line width=0.6pt, rounded corners=2pt] (rule.east) -- ++(0.3,0) |- (yes.west);
+\draw[flow, line width=0.6pt, rounded corners=2pt] (rule.east) -- ++(0.3,0) |- (no.west);
+
+\draw[flow] (final.east) to[out=0, in=180] (cem.west);
+
+\end{tikzpicture}
+\end{document}
