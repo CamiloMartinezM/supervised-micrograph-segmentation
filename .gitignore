@@ -142,3 +142,5 @@ Micrografías a anotar/
 .xlsx
 .zip
 
+# Local reference material (TikZ book, LaTeX samples), not part of the project
+docs/libraries/
