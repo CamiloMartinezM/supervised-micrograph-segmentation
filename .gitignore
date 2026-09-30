@@ -148,3 +148,6 @@ docs/libraries/
 # Rebuilt by docs/pipeline-overview/make_assets.py and tectonic
 docs/pipeline-overview/assets/
 docs/pipeline-overview/pipeline-overview.pdf
+
+# Local copy of the thesis (the README links the published version)
+docs/bsc-thesis-spa.pdf
